@@ -1,7 +1,10 @@
+import copy
 from pathlib import Path
 
+import torch
 import torch.utils.data as data
-from PIL import Image
+import numpy as np
+import cv2
 
 
 class ICDAR15Dataset(data.Dataset):
@@ -39,10 +42,77 @@ class ICDAR15Dataset(data.Dataset):
 
     def _read_image(self, index):
         filename = str(self.image_dir / "img_{}.jpg".format(index + 1))
-        return Image.open(filename).convert("RGB")
+        return cv2.imread(filename, cv2.IMREAD_COLOR)
 
     def __getitem__(self, index):
-        return self._read_image(index), self.labels[index]
+        image = self._read_image(index)
+        image, labels = self._resize_image_with_labels(image, self.labels[index])
+        pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask = self._mask_and_pixel_weights(labels, image.shape[:2])
+        image = torch.Tensor(image) / 255.
+        return image, pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask
 
+    def _resize_image_with_labels(self, image, labels, size=(512, 512)):
+        labels = copy.deepcopy(labels)
+        width, height = size
+        original_height, original_width, _ = image.shape
+        resized_image = cv2.resize(image, size)
+        points = np.array(labels["points"])
+        points[:, :, 0] = points[:, :, 0] * width / original_width
+        points[:, :, 1] = points[:, :, 1] * height / original_height
+        labels["points"] = points.tolist()
+        return resized_image, labels
 
-print(ICDAR15Dataset("./dataset/icdar2015/images", "./dataset/icdar2015/localization")[0])
+    def _mask_and_pixel_weights(self, label, image_size, scale=4):
+        def is_valid_coor(y, x, height, width):
+            return 0 <= x < width and 0 <= y < height
+
+        def neighbors(y, x):
+            return [
+                [y - 1, x - 1],
+                [y - 1, x],
+                [y - 1, x + 1],
+                [y, x - 1],
+                [y, x + 1],
+                [y + 1, x - 1],
+                [y + 1, x + 1],
+            ]
+
+        label_points = np.array(label["points"]) // scale
+        pixel_mask_size = [size // scale for size in image_size]
+        link_mask_size = [8,] + pixel_mask_size
+        pixel_mask = np.zeros(pixel_mask_size, dtype=np.uint8)
+        pixel_weight = np.zeros(pixel_mask_size, dtype=np.float32)
+        link_mask = np.zeros(link_mask_size, dtype=np.uint8)
+
+        bbox_masks = []
+        n_positive_bboxes = 0
+        for i, ps in enumerate(label_points):
+            pixel_mask_tmp = np.zeros(pixel_mask_size, dtype=np.uint8)
+            cv2.drawContours(pixel_mask_tmp, [ps], -1, color=1, thickness=1)
+            bbox_masks.append(pixel_mask_tmp)
+            if not label["ignored"][i]:
+                pixel_mask += pixel_mask_tmp
+                n_positive_bboxes += 1
+
+        pos_pixel_mask = (pixel_mask == 1).astype(np.int)
+        n_pos_pixels = np.sum(pos_pixel_mask)
+        sum_mask = np.sum(bbox_masks, axis=0)
+        neg_pixel_mask = (sum_mask != 1).astype(np.int)
+        not_overlapped_mask = sum_mask == 1
+        for bbox_index, bbox_mask in enumerate(bbox_masks):
+            bbox_positive_pixel_mask = bbox_mask * pos_pixel_mask
+            n_pos_pixel = np.sum(bbox_positive_pixel_mask)
+            if n_pos_pixel:
+                per_bbox_weight = n_pos_pixels / float(n_positive_bboxes)
+                per_pixel_weight = per_bbox_weight / n_pos_pixel
+                pixel_weight += bbox_positive_pixel_mask * per_pixel_weight
+            for link_index in range(8):
+                link_mask[link_index][np.where(bbox_positive_pixel_mask)] = 1
+
+            def in_bbox(y, x):
+                return bbox_positive_pixel_mask[y, x]
+            for y, x in zip(*np.where(bbox_positive_pixel_mask)):
+                for n_index, (y_, x_) in enumerate(neighbors(y, x)):
+                    if is_valid_coor(y_, x_, image_size[0], image_size[1]) and not in_bbox(y_, x_):
+                        link_mask[n_index][y_, x_] = 0
+        return torch.LongTensor(pos_pixel_mask), torch.LongTensor(neg_pixel_mask), torch.Tensor(pixel_weight), torch.LongTensor(link_mask)
