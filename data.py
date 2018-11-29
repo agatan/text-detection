@@ -88,7 +88,7 @@ class ICDAR15Dataset(data.Dataset):
         n_positive_bboxes = 0
         for i, ps in enumerate(label_points):
             pixel_mask_tmp = np.zeros(pixel_mask_size, dtype=np.uint8)
-            cv2.drawContours(pixel_mask_tmp, [ps], -1, color=1, thickness=1)
+            cv2.drawContours(pixel_mask_tmp, [ps], -1, color=1, thickness=-1)
             bbox_masks.append(pixel_mask_tmp)
             if not label["ignored"][i]:
                 pixel_mask += pixel_mask_tmp
