@@ -45,7 +45,7 @@ def main():
             steps += 1
             if steps % 1 == 0:
                 print("Loss: {} (Pixel: {}, Link: {})".format(loss_object.loss.item(), loss_object.pixel_loss.item(), loss_object.link_loss.item()))
-                torch.save(pixellink.state_dict, os.path.join(args.checkpoint, "best.pth"))
+                torch.save(pixellink.state_dict(), os.path.join(args.checkpoint, "best.pth"))
 
 
 main()
