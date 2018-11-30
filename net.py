@@ -178,12 +178,15 @@ class PixelLinkLoss:
         self.pos_pixel_weight = pixel_weight
         self.neg_pixel_weight = torch.zeros_like(pixel_weight, dtype=torch.uint8)
         self.neg_area_per_image = torch.zeros_like(self.area_per_image, dtype=torch.int)
+
         for i in range(batch_size):
             wrong = softmax_input[i, 0][neg_pixel_masks[i] == 1].view(-1)
             self.neg_area_per_image[i] = min(int_area_per_image[i] * r, wrong.size(0))
             topk, _ = torch.topk(-wrong, self.neg_area_per_image[i].item())
-            self.neg_pixel_weight[i][softmax_input[i, 0] <= -topk[-1]] = 1
-            self.neg_pixel_weight[i] = self.neg_pixel_weight[i] & (neg_pixel_masks[i] == 1)
+            if topk.size(0) != 0:
+                self.neg_pixel_weight[i][softmax_input[i, 0] <= -topk[-1]] = 1
+                self.neg_pixel_weight[i] = self.neg_pixel_weight[i] & (neg_pixel_masks[i] == 1)
+
         self.pixel_weight = self.pos_pixel_weight + self.neg_pixel_weight.type(torch.float32)
         weighted_pixel_cross_entropy_pos = (self.pos_pixel_weight * self.pixel_cross_entropy).view(batch_size, -1)
         weighted_pixel_cross_entropy_neg = (self.neg_pixel_weight.type(torch.float32) * self.pixel_cross_entropy).view(batch_size, -1)
