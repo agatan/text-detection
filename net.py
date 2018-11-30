@@ -159,8 +159,8 @@ class MobileNetV2PixelLink(nn.Module):
         else:
             o1 = o2
         o = self.final_conv(o1)
-        return o
-
+        # Returns text/non-text, 8 neighbors logits
+        return o[:, :2, :, :], o[:, 2:, :, :]
 
 class PixelLinkLoss:
     def __init__(self, pixel_input, pixel_target, neg_pixel_masks, pixel_weight, link_input, link_target, r=3, l=2):
