@@ -115,6 +115,6 @@ class ICDAR15Dataset(data.Dataset):
                 return bbox_positive_pixel_mask[y, x]
             for y, x in zip(*np.where(bbox_positive_pixel_mask)):
                 for n_index, (y_, x_) in enumerate(neighbors(y, x)):
-                    if is_valid_coor(y_, x_, self.image_size[0], self.image_size[1]) and not in_bbox(y_, x_):
+                    if is_valid_coor(y_, x_, self.image_size[0] // self.scale, self.image_size[1] // self.scale) and not in_bbox(y_, x_):
                         link_mask[n_index][y, x] = 0
         return torch.LongTensor(pos_pixel_mask), torch.LongTensor(neg_pixel_mask), torch.Tensor(pixel_weight), torch.LongTensor(link_mask)
