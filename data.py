@@ -8,10 +8,12 @@ import cv2
 
 
 class ICDAR15Dataset(data.Dataset):
-    def __init__(self, image_dir, labels_dir):
+    def __init__(self, image_dir, labels_dir, image_size=(512, 512), scale=4):
         self.image_dir = Path(image_dir)
         self.labels_dir = Path(labels_dir)
         self.labels = self._read_labels()
+        self.image_size = image_size
+        self.scale = scale
 
     def _read_labels(self):
         labels = []
@@ -47,22 +49,22 @@ class ICDAR15Dataset(data.Dataset):
     def __getitem__(self, index):
         image = self._read_image(index)
         image, labels = self._resize_image_with_labels(image, self.labels[index])
-        pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask = self._mask_and_pixel_weights(labels, image.shape[:2])
-        image = torch.Tensor(image) / 255.
+        pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask = self._mask_and_pixel_weights(labels)
+        image = torch.Tensor(image.transpose(2, 0, 1)) / 255.
         return image, pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask
 
-    def _resize_image_with_labels(self, image, labels, size=(512, 512)):
+    def _resize_image_with_labels(self, image, labels):
         labels = copy.deepcopy(labels)
-        width, height = size
+        height, width = self.image_size
         original_height, original_width, _ = image.shape
-        resized_image = cv2.resize(image, size)
+        resized_image = cv2.resize(image, (width, height))
         points = np.array(labels["points"])
         points[:, :, 0] = points[:, :, 0] * width / original_width
         points[:, :, 1] = points[:, :, 1] * height / original_height
         labels["points"] = points.tolist()
         return resized_image, labels
 
-    def _mask_and_pixel_weights(self, label, image_size, scale=4):
+    def _mask_and_pixel_weights(self, label):
         def is_valid_coor(y, x, height, width):
             return 0 <= x < width and 0 <= y < height
 
@@ -77,8 +79,8 @@ class ICDAR15Dataset(data.Dataset):
                 [y + 1, x + 1],
             ]
 
-        label_points = np.array(label["points"]) // scale
-        pixel_mask_size = [size // scale for size in image_size]
+        label_points = np.array(label["points"]) // self.scale
+        pixel_mask_size = [size // self.scale for size in self.image_size]
         link_mask_size = [8,] + pixel_mask_size
         pixel_mask = np.zeros(pixel_mask_size, dtype=np.uint8)
         pixel_weight = np.zeros(pixel_mask_size, dtype=np.float32)
@@ -113,6 +115,6 @@ class ICDAR15Dataset(data.Dataset):
                 return bbox_positive_pixel_mask[y, x]
             for y, x in zip(*np.where(bbox_positive_pixel_mask)):
                 for n_index, (y_, x_) in enumerate(neighbors(y, x)):
-                    if is_valid_coor(y_, x_, image_size[0], image_size[1]) and not in_bbox(y_, x_):
+                    if is_valid_coor(y_, x_, self.image_size[0], self.image_size[1]) and not in_bbox(y_, x_):
                         link_mask[n_index][y, x] = 0
         return torch.LongTensor(pos_pixel_mask), torch.LongTensor(neg_pixel_mask), torch.Tensor(pixel_weight), torch.LongTensor(link_mask)
