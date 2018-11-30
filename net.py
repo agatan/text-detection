@@ -61,7 +61,6 @@ class PixelLinkLoss:
         self.area_per_image = torch.sum(target.view(batch_size, -1), dim=1)
         int_area_per_image = self.area_per_image.type(torch.int).detach().tolist()
         self.area_per_image = self.area_per_image.type(torch.float32)
-        print(int_area_per_image)
         self.pos_pixel_weight = pixel_weight
         self.neg_pixel_weight = torch.zeros_like(pixel_weight, dtype=torch.uint8)
         self.neg_area_per_image = torch.zeros_like(self.area_per_image, dtype=torch.int)
@@ -91,10 +90,10 @@ class PixelLinkLoss:
         sum_pos_link_weight = torch.sum(self.pos_link_weight.view(batch_size, -1), dim=1).clamp(min=1e-8)
         sum_neg_link_weight = torch.sum(self.neg_link_weight.view(batch_size, -1), dim=1).clamp(min=1e-8)
 
-        loss_link_pos = link_cross_entropies * self.pos_link_weight / sum_pos_link_weight
-        loss_link_neg = link_cross_entropies * self.neg_link_weight / sum_neg_link_weight
-        loss_link_pos = loss_link_pos.view(batch_size, -1).sum(dim=1)
-        loss_link_neg = loss_link_neg.view(batch_size, -1).sum(dim=1)
+        loss_link_pos = link_cross_entropies * self.pos_link_weight
+        loss_link_neg = link_cross_entropies * self.neg_link_weight
+        loss_link_pos = loss_link_pos.view(batch_size, -1).sum(dim=1) / sum_pos_link_weight
+        loss_link_neg = loss_link_neg.view(batch_size, -1).sum(dim=1) / sum_neg_link_weight
         self.link_loss = torch.mean(loss_link_pos) + torch.mean(loss_link_neg)
 
 
