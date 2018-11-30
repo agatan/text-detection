@@ -49,10 +49,10 @@ class PixelLink(nn.Module):
 
 
 class PixelLinkLoss:
-    def __init__(self, pixel_input, pixel_target, neg_pixel_masks, pixel_weight, link_input, link_target, r=3):
+    def __init__(self, pixel_input, pixel_target, neg_pixel_masks, pixel_weight, link_input, link_target, r=3, l=2):
         self._set_pixel_weight_and_loss(pixel_input, pixel_target, neg_pixel_masks, pixel_weight, r=r)
         self._set_link_loss(link_input, link_target)
-        self.loss = self.pixel_loss + self.link_loss
+        self.loss = l * self.pixel_loss + self.link_loss
 
     def _set_pixel_weight_and_loss(self, input, target, neg_pixel_masks, pixel_weight, r):
         batch_size = input.size(0)
