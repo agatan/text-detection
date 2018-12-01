@@ -1,6 +1,8 @@
-from icecream import ic
+from typing import List, Tuple
+
 import torch
 import numpy as np
+import cv2
 
 
 def _link_pixels(pixel_mask: np.ndarray, link_mask: np.ndarray) -> np.ndarray:
@@ -81,3 +83,22 @@ def mask_to_instance_map(pixel_mask: torch.Tensor, link_mask: torch.Tensor) -> n
     for i in range(batch_size):
         instance_maps.append(_link_pixels(pixel_mask[i], link_neighbors[i]))
     return np.stack(instance_maps, axis=0)
+
+
+def instance_map_to_bboxes(instance_map: np.ndarray, scale: int = 4) -> List[List[np.ndarray]]:
+    batch_size, map_height, map_width = instance_map.shape
+    bounding_boxes = []
+    for i in range(batch_size):
+        imap = instance_map[i]
+        num_bboxes = np.max(imap)
+        bboxes = []
+        for n in range(1, num_bboxes + 1):
+            points = np.array(list(zip(*np.where(imap == n))))
+            rect = cv2.minAreaRect(points)
+            bbox = cv2.boxPoints(rect)
+            bbox = bbox * scale
+            bbox[:, 0] = np.clip(bbox[:, 0], 0, map_height * scale)
+            bbox[:, 1] = np.clip(bbox[:, 1], 0, map_width * scale)
+            bboxes.append(bbox)
+        bounding_boxes.append(bboxes)
+    return bounding_boxes
