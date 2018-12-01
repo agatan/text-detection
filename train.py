@@ -35,6 +35,7 @@ def main():
     pixel_losses = []
     pixel_accuracies = []
     link_losses = []
+    link_accuracies = []
     losses = []
     for epoch in range(args.epochs):
         for images, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_masks in dataloader:
@@ -53,18 +54,21 @@ def main():
             pixel_losses.append(loss_object.pixel_loss.item())
             pixel_accuracies.append(loss_object.pixel_accuracy)
             link_losses.append(loss_object.link_loss.item())
+            link_accuracies.append(loss_object.link_accuracy)
             losses.append(loss_object.loss.item())
             if len(losses) == 10:
                 print("Loss: {} (Pixel: {}, Link: {})".format(np.mean(losses), np.mean(pixel_losses), np.mean(link_losses)))
-                print("Pixel Accuracy: {:.4f}".format(np.mean(pixel_accuracies)))
+                print("Pixel Accuracy: {:.4f}, Link Accuracy: {:.4f}".format(np.mean(pixel_accuracies), np.mean(link_accuracies)))
                 torch.save(pixellink.state_dict(), os.path.join(args.checkpoint, "best.pth"))
                 writer.add_scalar("loss", np.mean(losses), steps)
                 writer.add_scalar("loss/pixel", np.mean(pixel_losses), steps)
                 writer.add_scalar("loss/link", np.mean(link_losses), steps)
                 writer.add_scalar("accuracy/pixel", np.mean(pixel_accuracies), steps)
+                writer.add_scalar("accuracy/link", np.mean(link_accuracies), steps)
                 pixel_losses = []
                 pixel_accuracies = []
                 link_losses = []
+                link_accuracies = []
                 losses = []
     writer.close()
 
