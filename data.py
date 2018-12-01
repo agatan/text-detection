@@ -1,3 +1,4 @@
+import math
 from typing import Tuple
 import copy
 from pathlib import Path
@@ -65,10 +66,12 @@ class ICDAR15Dataset(data.Dataset):
             image, labels = self._random_rotate_with_labels(image, labels)
         image, labels = self._random_crop_with_labels(image, labels)
         image, labels = self._resize_image_with_labels(image, labels)
+        labels = self._filter_small_labels(labels)
         return image, labels
 
     def _test_transform(self, image, labels):
         image, labels = self._resize_image_with_labels(image, labels)
+        labels = self._filter_small_labels(labels)
         return image, labels
 
     def _random_rotate_with_labels(self, image: np.ndarray, labels: dict) -> Tuple[np.ndarray, dict]:
@@ -123,6 +126,19 @@ class ICDAR15Dataset(data.Dataset):
         points[:, :, 1] = points[:, :, 1] * height / original_height
         labels["points"] = points.tolist()
         return resized_image, labels
+
+    def _filter_small_labels(self, labels: dict) -> dict:
+        new_labels = copy.deepcopy(labels)
+        for i in range(len(labels["points"])):
+            points = new_labels["points"][i]
+            for j in range(len(points)):
+                y1, x1 = points[j]
+                y2, x2 = points[(j + 1) % 4]
+                distance = math.sqrt((y2 - y1) ** 2 + (x2 - x1) ** 2)
+                if distance < 10:
+                    new_labels["ignored"][i] = True
+                    break
+        return new_labels
 
     def _mask_and_pixel_weights(self, label):
         def is_valid_coor(y, x, height, width):
