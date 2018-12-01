@@ -61,12 +61,39 @@ class ICDAR15Dataset(data.Dataset):
         return image, pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask
 
     def _train_transform(self, image, labels):
+        if np.random.random() < 0.2:
+            image, labels = self._random_rotate_with_labels(image, labels)
         image, labels = self._random_crop_with_labels(image, labels)
         image, labels = self._resize_image_with_labels(image, labels)
         return image, labels
 
     def _test_transform(self, image, labels):
         image, labels = self._resize_image_with_labels(image, labels)
+        return image, labels
+
+    def _random_rotate_with_labels(self, image: np.ndarray, labels: dict) -> Tuple[np.ndarray, dict]:
+        angle = np.random.randint(0, 4) * 90
+        if angle == 0:
+            return image, labels
+        return self._rotate_with_labels(image, labels, angle)
+
+    def _rotate_with_labels(self, image: np.ndarray, labels: dict, angle: int) -> Tuple[np.ndarray, dict]:
+        new_labels = copy.deepcopy(labels)
+        original_height, original_width, _ = image.shape
+        image = util.rotate(image, angle)
+        for i in range(len(labels["points"])):
+            points = np.array(labels["points"][i])
+            new_points = np.array(new_labels["points"][i])
+            if angle == 90:
+                new_points[:, 0] = points[:, 1]
+                new_points[:, 1] = original_height - points[:, 0]
+            elif angle == 180:
+                new_points[:, 0] = original_height - points[:, 0]
+                new_points[:, 1] = original_width - points[:, 1]
+            elif angle == 270:
+                new_points[:, 0] = original_width - points[:, 1]
+                new_points[:, 1] = points[:, 0]
+            new_labels["points"][i] = new_points.tolist()
         return image, labels
 
     def _random_crop_with_labels(self, image: np.ndarray, labels: dict) -> Tuple[np.ndarray, dict]:
