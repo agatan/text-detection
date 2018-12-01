@@ -84,20 +84,19 @@ class ICDAR15Dataset(data.Dataset):
         new_labels = copy.deepcopy(labels)
         original_height, original_width, _ = image.shape
         image = util.rotate(image, angle)
-        for i in range(len(labels["points"])):
-            points = np.array(labels["points"][i])
-            new_points = np.array(new_labels["points"][i])
-            if angle == 90:
-                new_points[:, 0] = points[:, 1]
-                new_points[:, 1] = original_height - points[:, 0]
-            elif angle == 180:
-                new_points[:, 0] = original_height - points[:, 0]
-                new_points[:, 1] = original_width - points[:, 1]
-            elif angle == 270:
-                new_points[:, 0] = original_width - points[:, 1]
-                new_points[:, 1] = points[:, 0]
-            new_labels["points"][i] = new_points.tolist()
-        return image, labels
+        points = np.array(labels["points"])
+        new_points = np.array(new_labels["points"])
+        if angle == 90:
+            new_points[:, :, 0] = original_height - points[:, :, 1]
+            new_points[:, :, 1] = points[:, :, 0]
+        elif angle == 180:
+            new_points[:, :, 0] = original_width - points[:, :, 0]
+            new_points[:, :, 1] = original_height - points[:, :, 1]
+        elif angle == 270:
+            new_points[:, :, 0] = points[:, :, 1]
+            new_points[:, :, 1] = original_width - points[:, :, 0]
+        new_labels["points"] = new_points.tolist()
+        return image, new_labels
 
     def _random_crop_with_labels(self, image: np.ndarray, labels: dict) -> Tuple[np.ndarray, dict]:
         new_labels = copy.deepcopy(labels)
@@ -108,8 +107,8 @@ class ICDAR15Dataset(data.Dataset):
             points = np.array(labels["points"][i])
             original_area = cv2.contourArea(points)
             new_points = np.array(new_labels["points"][i])
-            new_points[:, 0] = np.clip(points[:, 0] + offset_x, 0, width)
-            new_points[:, 1] = np.clip(points[:, 1] + offset_y, 0, height)
+            new_points[:, 0] = np.clip(points[:, 0] - offset_x, 0, width)
+            new_points[:, 1] = np.clip(points[:, 1] - offset_y, 0, height)
             new_labels["points"][i] = new_points.tolist()
             new_area = cv2.contourArea(new_points)
             if original_area * 0.2 > new_area:
@@ -194,3 +193,14 @@ class ICDAR15Dataset(data.Dataset):
                     if is_valid_coor(y_, x_, self.image_size[0] // self.scale, self.image_size[1] // self.scale) and not in_bbox(y_, x_):
                         link_mask[n_index][y, x] = 0
         return torch.LongTensor(pos_pixel_mask), torch.LongTensor(neg_pixel_mask), torch.Tensor(pixel_weight), torch.LongTensor(link_mask)
+
+
+import cv2
+
+dataset = ICDAR15Dataset("./dataset/icdar2015/train/images", "./dataset/icdar2015/train/labels", scale=2)
+for i in range(10):
+    image, pixel_mask, neg_pixel_mask, pixel_weight, link_mask = dataset[i]
+    image = (image.transpose(0, 1).transpose(1, 2).cpu().numpy() * 255).astype(np.uint8)
+    pixel_mask = np.expand_dims(cv2.resize(pixel_mask.cpu().numpy().astype(np.uint8), image.shape[:2]), -1)
+    image = image * (pixel_mask * 0.8 + 0.2)
+    cv2.imwrite("{}.png".format(i), image)
