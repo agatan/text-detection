@@ -71,7 +71,7 @@ class ICDAR15Dataset(data.Dataset):
 
     def _random_crop_with_labels(self, image: np.ndarray, labels: dict) -> Tuple[np.ndarray, dict]:
         new_labels = copy.deepcopy(labels)
-        scale = max(0.1, np.random.random())
+        scale = 0.1 + np.random.random() * 0.9
         image, (offset_y, offset_x) = util.random_crop(image, scale)
         height, width, _ = image.shape
         for i in range(len(labels["points"])):
