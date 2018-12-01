@@ -172,7 +172,7 @@ class PixelLinkLoss:
     def _set_pixel_weight_and_loss(self, input, target, neg_pixel_masks, pixel_weight, r):
         batch_size = input.size(0)
         softmax_input = F.softmax(input, dim=1)
-        self.pixel_cross_entropy = F.cross_entropy(softmax_input, target, reduction='none')
+        self.pixel_cross_entropy = F.cross_entropy(input, target, reduction='none')
         self.area_per_image = torch.sum(target.view(batch_size, -1), dim=1)
         int_area_per_image = self.area_per_image.type(torch.int).detach().tolist()
         self.area_per_image = self.area_per_image.type(torch.float32)
@@ -210,9 +210,8 @@ class PixelLinkLoss:
         link_cross_entropies = torch.Tensor.new_empty(self.pos_link_weight, self.pos_link_weight.size())
         for i in range(8):
             input = link_input[:, 2 * i:2 * (i + 1)]
-            softmax_input = F.softmax(input, dim=1)
             target = link_target[:, i]
-            link_cross_entropies[:, i] = F.cross_entropy(softmax_input, target, reduction='none')
+            link_cross_entropies[:, i] = F.cross_entropy(input, target, reduction='none')
         sum_pos_link_weight = torch.sum(self.pos_link_weight.view(batch_size, -1), dim=1).clamp(min=1e-8)
         sum_neg_link_weight = torch.sum(self.neg_link_weight.view(batch_size, -1), dim=1).clamp(min=1e-8)
 
