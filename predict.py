@@ -30,11 +30,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("image")
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--scale", default=4, type=int)
     args = parser.parse_args()
 
-    pixellink = net.MobileNetV2PixelLink(scale=args.scale)
-    pixellink.load_state_dict(torch.load(args.checkpoint, map_location=lambda storage, loc: storage))
+    state_dict = torch.load(args.checkpoint, map_location=lambda storage, loc: storage)
+    scale = state_dict['scale']
+    pixellink = net.MobileNetV2PixelLink(scale=scale)
+    pixellink.load_state_dict(state_dict['pixellink'])
     pixellink.eval()
 
     image = cv2.imread(args.image, cv2.IMREAD_COLOR)
@@ -44,7 +45,7 @@ def main():
     with torch.no_grad():
         pixel_pred, link_pred = pixellink(image_tensor)
         instance_map = postprocess.mask_to_instance_map(pixel_pred, link_pred)
-        bounding_boxes = postprocess.instance_map_to_bboxes(instance_map, scale=args.scale)
+        bounding_boxes = postprocess.instance_map_to_bboxes(instance_map, scale=scale)
 
     instance_map = instance_map[0]
     bounding_boxes = bounding_boxes[0]
