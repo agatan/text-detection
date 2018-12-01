@@ -8,12 +8,13 @@ import cv2
 
 
 class ICDAR15Dataset(data.Dataset):
-    def __init__(self, image_dir, labels_dir, image_size=(512, 512), scale=4):
+    def __init__(self, image_dir, labels_dir, image_size=(512, 512), scale=4, training=True):
         self.image_dir = Path(image_dir)
         self.labels_dir = Path(labels_dir)
         self.labels = self._read_labels()
         self.image_size = image_size
         self.scale = scale
+        self.training = training
 
     def _read_labels(self):
         labels = []
@@ -48,10 +49,21 @@ class ICDAR15Dataset(data.Dataset):
 
     def __getitem__(self, index):
         image = self._read_image(index)
-        image, labels = self._resize_image_with_labels(image, self.labels[index])
+        if self.training:
+            image, labels = self._train_transform(image, self.labels[index])
+        else:
+            image, labels = self._test_transform(image, self.labels[index])
         pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask = self._mask_and_pixel_weights(labels)
         image = torch.Tensor(image.transpose(2, 0, 1)) / 255.
         return image, pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask
+
+    def _train_transform(self, image, labels):
+        image, labels = self._resize_image_with_labels(image, labels)
+        return image, labels
+
+    def _test_transform(self, image, labels):
+        image, labels = self._resize_image_with_labels(image, labels)
+        return image, labels
 
     def _resize_image_with_labels(self, image, labels):
         labels = copy.deepcopy(labels)
