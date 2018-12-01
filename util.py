@@ -1,6 +1,20 @@
 from typing import Tuple
 
 import numpy as np
+import cv2
+
+
+def rotate(image: np.ndarray, angle: int) -> np.ndarray:
+    assert angle in [0, 90, 180, 270]
+    if angle == 90:
+        image = cv2.transpose(image)
+        image = cv2.flip(image, 1)
+    elif angle == 180:
+        image = cv2.flip(image, -1)
+    elif angle == 270:
+        image = cv2.transpose(image)
+        image = cv2.flip(image, 0)
+    return image
 
 
 def random_crop(image: np.ndarray, scale: float) -> Tuple[np.ndarray, Tuple[int, int]]:
