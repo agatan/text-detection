@@ -103,11 +103,11 @@ class ICDAR15Dataset(data.Dataset):
         height, width, _ = image.shape
         for i in range(len(labels["points"])):
             points = np.array(labels["points"][i])
-            new_points = points
+            original_area = cv2.contourArea(points)
+            new_points = np.array(new_labels["points"][i])
             new_points[:, 0] = np.clip(points[:, 0] + offset_x, 0, width)
             new_points[:, 1] = np.clip(points[:, 1] + offset_y, 0, height)
             new_labels["points"][i] = new_points.tolist()
-            original_area = cv2.contourArea(points)
             new_area = cv2.contourArea(new_points)
             if original_area * 0.2 > new_area:
                 new_labels["ignored"][i] = True
