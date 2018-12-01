@@ -20,7 +20,11 @@ def main():
     parser.add_argument("--logdir", default="logs")
     parser.add_argument("--checkpoint", default="checkpoint")
     parser.add_argument("--restore")
+    parser.add_argument("--seed", default=42, type=int)
     args = parser.parse_args()
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
     image_size = (512, 512)
     dataset = ICDAR15Dataset(os.path.join(args.train, "images"), os.path.join(args.train, "labels"), image_size=image_size, scale=args.scale)
     dataloader = data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=8)
