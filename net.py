@@ -225,6 +225,9 @@ class PixelLinkLoss:
     def _set_link_accuracy(self, input, target, pixel_mask):
         input = input.detach()
         elt_count = float(pixel_mask.sum().item())
+        if elt_count == 0.0:
+            self.link_accuracy = [0] * 8
+            return
         pixel_mask = pixel_mask.byte()
         accuracies = []
         for i in range(8):
