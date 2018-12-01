@@ -25,11 +25,19 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # pixellink = net.PixelLink(args.scale, pretrained=False).to(device)
     pixellink = net.MobileNetV2PixelLink(args.scale).to(device)
-    if args.restore:
-        pixellink.load_state_dict(torch.load(args.restore))
     optimizer = torch.optim.Adam(pixellink.parameters(), lr=1e-3)
-
     steps = 0
+    start_epoch = 0
+    best_loss = None
+    if args.restore:
+        state_dict = torch.load(args.restore)
+        pixellink.load_state_dict(state_dict['pixellink'])
+        optimizer.load_state_dict(state_dict['optimizer'])
+        steps = state_dict["steps"]
+        start_epoch = state_dict["epoch"]
+        args.scale = state_dict["scale"]
+        best_loss = state_dict["best_loss"]
+
     os.makedirs(args.checkpoint, exist_ok=True)
     writer = SummaryWriter(args.logdir)
     pixel_losses = []
@@ -37,7 +45,7 @@ def main():
     link_losses = []
     link_accuracies = []
     losses = []
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, args.epochs):
         for images, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_masks in dataloader:
             pixellink.train()
             optimizer.zero_grad()
@@ -59,7 +67,20 @@ def main():
             if len(losses) == 10:
                 print("Loss: {} (Pixel: {}, Link: {})".format(np.mean(losses), np.mean(pixel_losses), np.mean(link_losses)))
                 print("Pixel Accuracy: {:.4f}, Link Accuracy: {:.4f}".format(np.mean(pixel_accuracies), np.mean(link_accuracies)))
-                torch.save(pixellink.state_dict(), os.path.join(args.checkpoint, "best.pth"))
+                current_loss = np.mean(losses)
+                if best_loss is None or current_loss < best_loss:
+                    best_loss = current_loss
+                    state_dict = {
+                        "pixellink": pixellink.state_dict(),
+                        "optimizer": optimizer.state_dict(),
+                        "steps": steps,
+                        "epoch": epoch,
+                        "scale": args.scale,
+                        "best_loss": best_loss,
+                    }
+                    checkpoint_path = os.path.join(args.checkpoint, "best.pth.tar")
+                    print("[Epoch {} Step {}]Save checkpoint {}".format(epoch, steps, checkpoint_path))
+                    torch.save(state_dict, checkpoint_path)
                 writer.add_scalar("loss", np.mean(losses), steps)
                 writer.add_scalar("loss/pixel", np.mean(pixel_losses), steps)
                 writer.add_scalar("loss/link", np.mean(link_losses), steps)
