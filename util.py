@@ -1,4 +1,5 @@
 from typing import Tuple
+import math
 
 import numpy as np
 import cv2
@@ -25,3 +26,11 @@ def random_crop(image: np.ndarray, scale: float) -> Tuple[np.ndarray, Tuple[int,
     offset_x = np.random.randint(0, width - new_width)
     image = image[offset_y:offset_y + new_height, offset_x:offset_x + new_width]
     return (image, (offset_y, offset_x))
+
+
+def transform_aspect_ratio(image: np.ndarray, aspect_ratio: float) -> np.ndarray:
+    original_height, original_width, _ = image.shape
+    area = original_height * original_width
+    height = round(math.sqrt(area / aspect_ratio))
+    width = round(area / height)
+    return cv2.resize(image, (round(width), round(height)))
