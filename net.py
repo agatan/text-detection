@@ -167,6 +167,7 @@ class PixelLinkLoss:
         self._set_pixel_weight_and_loss(pixel_input, pixel_target, neg_pixel_masks, pixel_weight, r=r)
         self._set_link_loss(link_input, link_target)
         self._set_pixel_accuracy(pixel_input, pixel_target, neg_pixel_masks)
+        self._set_link_accuracy(link_input, link_target, pixel_target)
         self.loss = l * self.pixel_loss + self.link_loss
 
     def _set_pixel_weight_and_loss(self, input, target, neg_pixel_masks, pixel_weight, r):
@@ -220,6 +221,17 @@ class PixelLinkLoss:
         loss_link_pos = loss_link_pos.view(batch_size, -1).sum(dim=1) / sum_pos_link_weight
         loss_link_neg = loss_link_neg.view(batch_size, -1).sum(dim=1) / sum_neg_link_weight
         self.link_loss = torch.mean(loss_link_pos) + torch.mean(loss_link_neg)
+
+    def _set_link_accuracy(self, input, target, pixel_mask):
+        input = input.detach()
+        elt_count = float(pixel_mask.sum().item())
+        pixel_mask = pixel_mask.byte()
+        accuracies = []
+        for i in range(8):
+            _, argmax = torch.max(input[:, 2*i:2*(i+1)], dim=1)
+            match_count = torch.sum((argmax == target[:, i]) * pixel_mask).item()
+            accuracies.append(match_count / elt_count)
+        self.link_accuracy = accuracies
 
 
 def test():
