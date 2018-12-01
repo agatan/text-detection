@@ -64,6 +64,7 @@ class ICDAR15Dataset(data.Dataset):
     def _train_transform(self, image, labels):
         if np.random.random() < 0.2:
             image, labels = self._random_rotate_with_labels(image, labels)
+        image, labels = self._random_transform_aspect_with_labels(image, labels)
         image, labels = self._random_crop_with_labels(image, labels)
         image, labels = self._resize_image_with_labels(image, labels)
         labels = self._filter_small_labels(labels)
@@ -95,6 +96,23 @@ class ICDAR15Dataset(data.Dataset):
         elif angle == 270:
             new_points[:, :, 0] = points[:, :, 1]
             new_points[:, :, 1] = original_width - points[:, :, 0]
+        new_labels["points"] = new_points.tolist()
+        return image, new_labels
+
+    def _random_transform_aspect_with_labels(self, image: np.ndarray, labels: dict) -> Tuple[np.ndarray, dict]:
+        ratio = 0.5 + np.random.random() * 1.5
+        return self._transform_aspect_with_labels(image, labels, ratio)
+
+    def _transform_aspect_with_labels(self, image: np.ndarray, labels: dict, aspect_ratio: float) -> Tuple[np.ndarray, dict]:
+        new_labels = copy.deepcopy(labels)
+        original_height, original_width, _ = image.shape
+        image = util.transform_aspect_ratio(image, aspect_ratio)
+        height, width, _ = image.shape
+        y_r = height / float(original_height)
+        x_r = width / float(original_width)
+        new_points = np.array(new_labels["points"])
+        new_points[:, :, 0] = new_points[:, :, 0] * x_r
+        new_points[:, :, 1] = new_points[:, :, 1] * y_r
         new_labels["points"] = new_points.tolist()
         return image, new_labels
 
