@@ -195,12 +195,14 @@ class ICDAR15Dataset(data.Dataset):
         return torch.LongTensor(pos_pixel_mask), torch.LongTensor(neg_pixel_mask), torch.Tensor(pixel_weight), torch.LongTensor(link_mask)
 
 
-import cv2
 
-dataset = ICDAR15Dataset("./dataset/icdar2015/train/images", "./dataset/icdar2015/train/labels", scale=2)
-for i in range(10):
-    image, pixel_mask, neg_pixel_mask, pixel_weight, link_mask = dataset[i]
-    image = (image.transpose(0, 1).transpose(1, 2).cpu().numpy() * 255).astype(np.uint8)
-    pixel_mask = np.expand_dims(cv2.resize(pixel_mask.cpu().numpy().astype(np.uint8), image.shape[:2]), -1)
-    image = image * (pixel_mask * 0.8 + 0.2)
-    cv2.imwrite("{}.png".format(i), image)
+def test():
+    import cv2
+
+    dataset = ICDAR15Dataset("./dataset/icdar2015/train/images", "./dataset/icdar2015/train/labels", scale=2)
+    for i in range(10):
+        image, pixel_mask, neg_pixel_mask, pixel_weight, link_mask = dataset[i]
+        image = (image.transpose(0, 1).transpose(1, 2).cpu().numpy() * 255).astype(np.uint8)
+        pixel_mask = np.expand_dims(cv2.resize(pixel_mask.cpu().numpy().astype(np.uint8), image.shape[:2]), -1)
+        image = image * (pixel_mask * 0.8 + 0.2)
+        cv2.imwrite("{}.png".format(i), image)
