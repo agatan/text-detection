@@ -35,6 +35,7 @@ def main():
     # pixellink = net.PixelLink(args.scale, pretrained=False).to(device)
     pixellink = net.MobileNetV2PixelLink(args.scale).to(device)
     optimizer = torch.optim.Adam(pixellink.parameters(), lr=1e-3)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
     steps = 0
     start_epoch = 0
     best_loss = None
@@ -108,6 +109,7 @@ def main():
         print("Test Loss: {} (Pixel: {}, Link: {})".format(np.mean(test_losses), np.mean(test_pixel_losses), np.mean(test_link_losses)))
         print("Pixel Accuracy: {:.4f}, Link Accuracy: {:.4f}".format(np.mean(test_pixel_accuracies), np.mean(test_link_accuracies)))
         current_loss = np.mean(test_losses)
+        scheduler.step(current_loss)
         if best_loss is None or current_loss < best_loss:
             best_loss = current_loss
             state_dict = {
