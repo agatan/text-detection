@@ -47,6 +47,28 @@ def main():
         instance_map = postprocess.mask_to_instance_map(pixel_pred, link_pred)
         bounding_boxes = postprocess.instance_map_to_bboxes(instance_map, scale=scale)
 
+        _, pixel_mask = torch.max(pixel_pred, dim=1)
+        pixel_mask = pixel_mask.squeeze_(0)
+        link_masks = []
+        for i in range(8):
+            link_mask = link_pred[:, 2*i:2*(i+1)].softmax(dim=1)[:, 1, :, :]
+            link_mask = link_mask.squeeze(0)
+            link_mask = link_mask * pixel_mask.float()
+            link_mask = (link_mask.cpu().numpy() * 255).astype(np.uint8)
+            link_mask = cv2.resize(link_mask, (image.shape[1], image.shape[0]))
+            link_mask = cv2.applyColorMap(link_mask, cv2.COLORMAP_JET)
+            link_masks.append(link_mask)
+        pixel_mask = (pixel_mask.cpu().numpy() * 255).astype(np.uint8)
+        pixel_mask = cv2.resize(pixel_mask, (image.shape[1], image.shape[0]))
+        pixel_mask = cv2.applyColorMap(pixel_mask, cv2.COLORMAP_HOT)
+
+    images = [
+        np.concatenate([link_masks[0], link_masks[1], link_masks[2]], axis=1),
+        np.concatenate([link_masks[3], pixel_mask, link_masks[4]], axis=1),
+        np.concatenate([link_masks[5], link_masks[6], link_masks[7]], axis=1),
+    ]
+    cv2.imwrite("map.png", np.concatenate(images, axis=0))
+
     instance_map = instance_map[0]
     bounding_boxes = bounding_boxes[0]
 
