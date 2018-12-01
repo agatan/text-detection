@@ -1,3 +1,4 @@
+from typing import Tuple
 import copy
 from pathlib import Path
 
@@ -5,6 +6,8 @@ import torch
 import torch.utils.data as data
 import numpy as np
 import cv2
+
+import util
 
 
 class ICDAR15Dataset(data.Dataset):
@@ -58,12 +61,30 @@ class ICDAR15Dataset(data.Dataset):
         return image, pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask
 
     def _train_transform(self, image, labels):
+        image, labels = self._random_crop_with_labels(image, labels)
         image, labels = self._resize_image_with_labels(image, labels)
         return image, labels
 
     def _test_transform(self, image, labels):
         image, labels = self._resize_image_with_labels(image, labels)
         return image, labels
+
+    def _random_crop_with_labels(self, image: np.ndarray, labels: dict) -> Tuple[np.ndarray, dict]:
+        new_labels = copy.deepcopy(labels)
+        scale = max(0.1, np.random.random())
+        image, (offset_y, offset_x) = util.random_crop(image, scale)
+        height, width, _ = image.shape
+        for i in range(len(labels["points"])):
+            points = np.array(labels["points"][i])
+            new_points = points
+            new_points[:, 0] = np.clip(points[:, 0] + offset_x, 0, width)
+            new_points[:, 1] = np.clip(points[:, 1] + offset_y, 0, height)
+            new_labels["points"][i] = new_points.tolist()
+            original_area = cv2.contourArea(points)
+            new_area = cv2.contourArea(new_points)
+            if original_area * 0.2 > new_area:
+                new_labels["ignored"][i] = True
+        return image, new_labels
 
     def _resize_image_with_labels(self, image, labels):
         labels = copy.deepcopy(labels)
