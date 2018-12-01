@@ -90,7 +90,7 @@ def main():
         test_link_losses = []
         test_pixel_accuracies = []
         test_link_accuracies = []
-        test_steps_per_epoch = (len(test_dataset) - 1) // args.batch_size + 1
+        test_steps_per_epoch = (len(test_dataset) - 1) // 8 + 1
         with torch.no_grad():
             for images, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_masks in tqdm(test_dataloader, total=test_steps_per_epoch):
                 images = images.to(device)
@@ -107,7 +107,7 @@ def main():
                 test_losses.append(loss_object.loss.item())
         print("Test Loss: {} (Pixel: {}, Link: {})".format(np.mean(test_losses), np.mean(test_pixel_losses), np.mean(test_link_losses)))
         print("Pixel Accuracy: {:.4f}, Link Accuracy: {:.4f}".format(np.mean(test_pixel_accuracies), np.mean(test_link_accuracies)))
-        current_loss = np.mean(losses)
+        current_loss = np.mean(test_losses)
         if best_loss is None or current_loss < best_loss:
             best_loss = current_loss
             state_dict = {
