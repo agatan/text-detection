@@ -5,6 +5,7 @@ from pathlib import Path
 
 import torch
 import torch.utils.data as data
+import torchvision.transforms as transforms
 import numpy as np
 import cv2
 
@@ -19,6 +20,8 @@ class ICDAR15Dataset(data.Dataset):
         self.image_size = image_size
         self.scale = scale
         self.training = training
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                              std=[0.229, 0.224, 0.225])
 
     def _read_labels(self):
         labels = []
@@ -59,6 +62,7 @@ class ICDAR15Dataset(data.Dataset):
             image, labels = self._test_transform(image, self.labels[index])
         pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask = self._mask_and_pixel_weights(labels)
         image = torch.Tensor(image.transpose(2, 0, 1)) / 255.
+        image = self.normalize(image)
         return image, pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask
 
     def _train_transform(self, image, labels):
