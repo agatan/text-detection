@@ -184,6 +184,8 @@ class PixelLinkLoss:
         for i in range(batch_size):
             wrong = softmax_input[i, 0][neg_pixel_masks[i] == 1].view(-1)
             self.neg_area_per_image[i] = min(int_area_per_image[i] * r, wrong.size(0))
+            if wrong.size(0) == 0:
+                continue
             topk, _ = torch.topk(-wrong, self.neg_area_per_image[i].item())
             if topk.size(0) != 0:
                 self.neg_pixel_weight[i][softmax_input[i, 0] <= -topk[-1]] = 1
