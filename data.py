@@ -217,8 +217,10 @@ class ICDAR15Dataset(data.Dataset):
 
 def test():
     import cv2
+    import os
 
-    dataset = ICDAR15Dataset("./dataset/icdar2015/train/images", "./dataset/icdar2015/train/labels", scale=2)
+    basedir = "./dataset"
+    dataset = ICDAR15Dataset(os.path.join(basedir, "images"), os.path.join(basedir, "labels"), scale=2, training=False)
     for i in range(10):
         image, pixel_mask, neg_pixel_mask, pixel_weight, link_mask = dataset[i]
         image = (image.transpose(0, 1).transpose(1, 2).cpu().numpy() * 255).astype(np.uint8)
