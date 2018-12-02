@@ -3,6 +3,7 @@ from typing import Tuple
 
 import torch
 import torch.utils.data as data
+import torchvision.transforms as transforms
 # import matplotlib.pyplot as plt
 import cv2
 import numpy as np
@@ -22,7 +23,10 @@ def resize_image(image: np.ndarray, size=(512, 512)) -> Tuple[np.ndarray, float,
 
 def preprocess_image(image: np.ndarray) -> torch.Tensor:
     image = np.transpose(image, (2, 0, 1))
-    return torch.Tensor(image.astype(np.float32) / 255.)
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
+    tensor = torch.Tensor(image.astype(np.float32) / 255.)
+    return normalize(tensor)
 
 
 def main():
