@@ -237,6 +237,66 @@ class PixelLinkLoss:
         self.link_accuracy = accuracies
 
 
+class FocalLoss(nn.Module):
+    def __init__(self, gamma=2, alpha=None):
+        super(FocalLoss, self).__init__()
+        self.gamma = gamma
+        if isinstance(alpha, float):
+            self.alpha = torch.Tensor([alpha, 1 - alpha])
+        else:
+            self.alpha = alpha
+
+    def forward(self, input, target):
+        if input.dim() > 2:
+            input = input.view(input.size(0), input.size(1), -1)
+            input = input.transpose(1, 2)
+            input = input.contiguous().view(-1, input.size(2))
+        original_size = target.size()
+        target = target.contiguous().view(-1, 1)
+        logpt = F.log_softmax(input, dim=1)
+        logpt = logpt.gather(dim=1, index=target).view(-1)
+        pt = logpt.detach().exp()
+
+        if self.alpha is not None:
+            self.alpha = self.alpha.type(logpt.dtype).to(logpt.device)
+            at = self.alpha.gather(dim=0, index=target.detach().view(-1))
+            logpt = logpt * at
+
+        loss = -1 * (1 - pt) ** self.gamma * logpt
+        return loss.view(original_size[0], original_size[1], original_size[2])
+
+
+class PixelLinkFocalLoss(PixelLinkLoss):
+    def __init__(self, pixel_input, pixel_target, neg_pixel_masks, pixel_weight, link_input, link_target, r=3, l=2):
+        self._set_pixel_weight_and_loss(pixel_input, pixel_target, neg_pixel_masks, pixel_weight, r=r)
+        self._set_link_loss(link_input, link_target, pixel_target)
+        self._set_pixel_accuracy(pixel_input, pixel_target, neg_pixel_masks)
+        self._set_link_accuracy(link_input, link_target, pixel_target)
+        self.loss = l * self.pixel_loss + self.link_loss
+
+    def _set_pixel_weight_and_loss(self, input, target, neg_pixel_mask, pixel_weight, r):
+        batch_size = input.size(0)
+        self.pixel_cross_entropy = FocalLoss(alpha=0.25)(input, target)
+        non_ignored = (target == 1) + (neg_pixel_mask == 1)
+        self.pixel_cross_entropy *= non_ignored.float()
+        loss = torch.sum(self.pixel_cross_entropy, dim=1) / torch.sum(non_ignored, dim=1).float().clamp(min=1e-8)
+        self.pixel_loss = torch.mean(loss)
+
+    def _set_link_loss(self, input, target, positive_mask):
+        batch_size = input.size(0)
+        positive_mask = positive_mask.float().unsqueeze(1).expand(-1, 8, -1, -1)
+        link_cross_entropies = torch.zeros_like(positive_mask)
+        focal = FocalLoss(alpha=0.25)
+        for i in range(8):
+            inp = input[:, 2 * i:2 * (i + 1)]
+            tar = target[:, i]
+            link_cross_entropies[:, i] = focal(inp, tar)
+        link_cross_entropies *= positive_mask
+        pixels_per_image = torch.sum(positive_mask.contiguous().view(batch_size, -1), dim=1)
+        loss = torch.sum(link_cross_entropies.view(batch_size, -1), dim=1) / pixels_per_image.float().clamp(min=1e-8)
+        self.link_loss = torch.mean(loss)
+
+
 def test():
     from torch.utils.data import DataLoader
     from data import ICDAR15Dataset
