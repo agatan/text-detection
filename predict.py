@@ -49,24 +49,34 @@ def main():
 
         _, pixel_mask = torch.max(pixel_pred, dim=1)
         pixel_mask = pixel_mask.squeeze_(0)
+        link_masks_probs = []
         link_masks = []
         for i in range(8):
             link_mask = link_pred[:, 2*i:2*(i+1)].softmax(dim=1)[:, 1, :, :]
             link_mask = link_mask.squeeze(0)
             link_mask = link_mask * pixel_mask.float()
+            link_mask_bin = (cv2.resize(link_mask.cpu().numpy(), (image.shape[1], image.shape[0])) > 0.5).astype(np.uint8) * 255
+            link_masks.append(link_mask_bin)
             link_mask = (link_mask.cpu().numpy() * 255).astype(np.uint8)
             link_mask = cv2.resize(link_mask, (image.shape[1], image.shape[0]))
             link_mask = cv2.applyColorMap(link_mask, cv2.COLORMAP_JET)
-            link_masks.append(link_mask)
+            link_masks_probs.append(link_mask)
         pixel_proba = pixel_pred.softmax(dim=1)[:, 1, :, :].squeeze(0)
         pixel_proba = (pixel_proba.cpu().numpy() * 255).astype(np.uint8)
         pixel_proba = cv2.resize(pixel_proba, (image.shape[1], image.shape[0]))
+        pixel_mask = (pixel_proba > 255 * 0.5).astype(np.uint8) * 255
         pixel_proba = cv2.applyColorMap(pixel_proba, cv2.COLORMAP_JET)
 
     images = [
         np.concatenate([link_masks[0], link_masks[1], link_masks[2]], axis=1),
-        np.concatenate([link_masks[3], pixel_proba, link_masks[4]], axis=1),
+        np.concatenate([link_masks[3], pixel_mask, link_masks[4]], axis=1),
         np.concatenate([link_masks[5], link_masks[6], link_masks[7]], axis=1),
+    ]
+    cv2.imwrite("binmap.png", cv2.applyColorMap(np.concatenate(images, axis=0), cv2.COLORMAP_JET))
+    images = [
+        np.concatenate([link_masks_probs[0], link_masks_probs[1], link_masks_probs[2]], axis=1),
+        np.concatenate([link_masks_probs[3], pixel_proba, link_masks_probs[4]], axis=1),
+        np.concatenate([link_masks_probs[5], link_masks_probs[6], link_masks_probs[7]], axis=1),
     ]
     cv2.imwrite("map.png", np.concatenate(images, axis=0))
 
