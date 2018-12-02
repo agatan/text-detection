@@ -58,13 +58,14 @@ def main():
             link_mask = cv2.resize(link_mask, (image.shape[1], image.shape[0]))
             link_mask = cv2.applyColorMap(link_mask, cv2.COLORMAP_JET)
             link_masks.append(link_mask)
-        pixel_mask = (pixel_mask.cpu().numpy() * 255).astype(np.uint8)
-        pixel_mask = cv2.resize(pixel_mask, (image.shape[1], image.shape[0]))
-        pixel_mask = cv2.applyColorMap(pixel_mask, cv2.COLORMAP_HOT)
+        pixel_proba = pixel_pred.softmax(dim=1)[:, 1, :, :].squeeze(0)
+        pixel_proba = (pixel_proba.cpu().numpy() * 255).astype(np.uint8)
+        pixel_proba = cv2.resize(pixel_proba, (image.shape[1], image.shape[0]))
+        pixel_proba = cv2.applyColorMap(pixel_proba, cv2.COLORMAP_JET)
 
     images = [
         np.concatenate([link_masks[0], link_masks[1], link_masks[2]], axis=1),
-        np.concatenate([link_masks[3], pixel_mask, link_masks[4]], axis=1),
+        np.concatenate([link_masks[3], pixel_proba, link_masks[4]], axis=1),
         np.concatenate([link_masks[5], link_masks[6], link_masks[7]], axis=1),
     ]
     cv2.imwrite("map.png", np.concatenate(images, axis=0))
