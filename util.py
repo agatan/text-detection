@@ -22,8 +22,14 @@ def random_crop(image: np.ndarray, scale: float) -> Tuple[np.ndarray, Tuple[int,
     height, width, _ = image.shape
     new_height = round(height * scale)
     new_width = round(width * scale)
-    offset_y = np.random.randint(0, height - new_height)
-    offset_x = np.random.randint(0, width - new_width)
+    if height > new_height:
+        offset_y = np.random.randint(0, height - new_height)
+    else:
+        offset_y = 0
+    if width > new_width:
+        offset_x = np.random.randint(0, width - new_width)
+    else:
+        offset_x = 0
     image = image[offset_y:offset_y + new_height, offset_x:offset_x + new_width]
     return (image, (offset_y, offset_x))
 
