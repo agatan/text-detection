@@ -26,9 +26,13 @@ def main():
     np.random.seed(args.seed)
 
     image_size = (512, 512)
-    dataset = ICDAR15Dataset(os.path.join(args.train, "images"), os.path.join(args.train, "labels"), image_size=image_size, scale=args.scale)
+    dataset = ICDAR15Dataset(os.path.join(args.train, "images"), os.path.join(args.train, "labels"), image_size=image_size, scale=args.scale, training=True)
     dataloader = data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=8)
-    test_dataset = ICDAR15Dataset(os.path.join(args.test, "images"), os.path.join(args.test, "labels"), image_size=image_size, scale=args.scale, training=False)
+    if args.test is not None:
+        test_dataset = ICDAR15Dataset(os.path.join(args.test, "images"), os.path.join(args.test, "labels"), image_size=image_size, scale=args.scale, training=False)
+    else:
+        n_train = int(len(dataset) * 0.95)
+        dataset, test_dataset = torch.utils.data.random_split(dataset, [n_train, len(dataset) - n_train])
     test_dataloader = data.DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=8)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
