@@ -87,7 +87,7 @@ def main():
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
     steps = 0
     start_epoch = 0
-    best_loss = None
+    best_score = None
     if args.restore:
         state_dict = torch.load(args.restore)
         pixellink.load_state_dict(state_dict['pixellink'])
@@ -95,7 +95,7 @@ def main():
         steps = state_dict["steps"]
         start_epoch = state_dict["epoch"]
         args.scale = state_dict["scale"]
-        best_loss = state_dict["best_loss"]
+        best_score = state_dict["best_score"]
 
     os.makedirs(args.checkpoint, exist_ok=True)
     writer = SummaryWriter(os.path.join(args.logdir, "train"))
@@ -104,7 +104,7 @@ def main():
     test_reporter = Reporter("test", test_writer)
     for epoch in range(start_epoch, args.epochs):
         print("[Epoch {}]".format(epoch))
-        steps_per_epoch = min(100, (len(dataset) - 1) // args.batch_size + 1)
+        steps_per_epoch = min(200, (len(dataset) - 1) // args.batch_size + 1)
         for images, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_masks in tqdm(itertools.islice(dataloader, steps_per_epoch), total=steps_per_epoch):
             pixellink.train()
             optimizer.zero_grad()
@@ -136,17 +136,17 @@ def main():
                 loss_object = net.PixelLinkFocalLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_input, link_masks)
                 test_reporter.step(loss_object, steps)
 
-        current_loss = np.mean(test_reporter.losses)
+        current_score = np.mean(test_reporter.pixel_accuracies) * np.mean(test_reporter.link_accuracies)
         # scheduler.step(current_loss)
-        if best_loss is None or current_loss < best_loss:
-            best_loss = current_loss
+        if best_score is None or current_score > best_score:
+            best_score = current_score
             state_dict = {
                 "pixellink": pixellink.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "steps": steps,
                 "epoch": epoch,
                 "scale": args.scale,
-                "best_loss": best_loss,
+                "best_score": best_score,
             }
             checkpoint_path = os.path.join(args.checkpoint, "best.pth.tar")
             print("[Epoch {} Step {}] Save checkpoint {}".format(epoch, steps, checkpoint_path))
@@ -154,5 +154,6 @@ def main():
         test_reporter.flush(steps)
 
     writer.close()
+    test_writer.close()
 
 main()
