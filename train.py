@@ -5,9 +5,54 @@ import torch.utils.data as data
 from tensorboardX import SummaryWriter
 import numpy as np
 from tqdm import tqdm
+import itertools
 
 from data import ICDAR15Dataset
 import net
+
+
+class Reporter:
+    def __init__(self, name, writer, frequency=None):
+        self.name = name
+        self.losses = []
+        self.pixel_losses = []
+        self.pixel_accuracies = []
+        self.link_losses = []
+        self.link_accuracies = []
+        self.writer = writer
+        self.frequency = frequency
+
+    def step(self, loss_object, steps):
+        self.losses.append(loss_object.loss.item())
+        self.pixel_losses.append(loss_object.pixel_loss.item())
+        self.pixel_accuracies.append(loss_object.pixel_accuracy)
+        self.link_losses.append(loss_object.link_loss.item())
+        self.link_accuracies.append(loss_object.link_accuracy)
+        if self.frequency is not None and len(self.losses) == self.frequency:
+            self.flush(steps)
+
+    def flush(self, steps):
+        print("Report {}: Step {}".format(self.name, steps))
+        print("Loss: {} (Pixel: {}, Link: {})".format(np.mean(self.losses), np.mean(self.pixel_losses), np.mean(self.link_losses)))
+        print("Pixel Accuracy: {:.4f}, Link Accuracy: {:.4f}".format(np.mean(self.pixel_accuracies), np.mean(self.link_accuracies)))
+        self._write("loss", self.losses, steps)
+        self._write("loss/pixel", self.pixel_losses, steps)
+        self._write("loss/link", self.link_losses, steps)
+        self._write("accuracy/pixel", self.pixel_accuracies, steps)
+        self._write("accuracy/link", self.link_accuracies, steps)
+        self._reset()
+
+    def _reset(self):
+        self.losses = []
+        self.pixel_losses = []
+        self.pixel_accuracies = []
+        self.link_losses = []
+        self.link_accuracies = []
+
+    def _write(self, name, value, steps):
+        self.writer.add_scalar(name, np.mean(value), steps)
+
+
 
 def main():
     import argparse
@@ -54,16 +99,13 @@ def main():
 
     os.makedirs(args.checkpoint, exist_ok=True)
     writer = SummaryWriter(os.path.join(args.logdir, "train"))
+    reporter = Reporter("train", writer)
     test_writer = SummaryWriter(os.path.join(args.logdir, "test"))
+    test_reporter = Reporter("test", test_writer)
     for epoch in range(start_epoch, args.epochs):
         print("[Epoch {}]".format(epoch))
-        pixel_losses = []
-        pixel_accuracies = []
-        link_losses = []
-        link_accuracies = []
-        losses = []
-        steps_per_epoch = (len(dataset) - 1) // args.batch_size + 1
-        for images, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_masks in tqdm(dataloader, total=steps_per_epoch):
+        steps_per_epoch = min(100, (len(dataset) - 1) // args.batch_size + 1)
+        for images, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_masks in tqdm(itertools.islice(dataloader, steps_per_epoch), total=steps_per_epoch):
             pixellink.train()
             optimizer.zero_grad()
             images = images.to(device)
@@ -77,25 +119,10 @@ def main():
             loss_object.loss.backward()
             optimizer.step()
             steps += 1
-            pixel_losses.append(loss_object.pixel_loss.item())
-            pixel_accuracies.append(loss_object.pixel_accuracy)
-            link_losses.append(loss_object.link_loss.item())
-            link_accuracies.append(loss_object.link_accuracy)
-            losses.append(loss_object.loss.item())
-        print("Loss: {} (Pixel: {}, Link: {})".format(np.mean(losses), np.mean(pixel_losses), np.mean(link_losses)))
-        print("Pixel Accuracy: {:.4f}, Link Accuracy: {:.4f}".format(np.mean(pixel_accuracies), np.mean(link_accuracies)))
-        writer.add_scalar("loss", np.mean(losses), steps)
-        writer.add_scalar("loss/pixel", np.mean(pixel_losses), steps)
-        writer.add_scalar("loss/link", np.mean(link_losses), steps)
-        writer.add_scalar("accuracy/pixel", np.mean(pixel_accuracies), steps)
-        writer.add_scalar("accuracy/link", np.mean(link_accuracies), steps)
+            reporter.step(loss_object, steps)
+        reporter.flush(steps)
 
         pixellink.eval()
-        test_losses = []
-        test_pixel_losses = []
-        test_link_losses = []
-        test_pixel_accuracies = []
-        test_link_accuracies = []
         test_steps_per_epoch = (len(test_dataset) - 1) // 8 + 1
         with torch.no_grad():
             for images, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_masks in tqdm(test_dataloader, total=test_steps_per_epoch):
@@ -107,14 +134,9 @@ def main():
                 pixel_input, link_input = pixellink(images)
                 # loss_object = net.PixelLinkLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_input, link_masks)
                 loss_object = net.PixelLinkFocalLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_input, link_masks)
-                test_pixel_losses.append(loss_object.pixel_loss.item())
-                test_pixel_accuracies.append(loss_object.pixel_accuracy)
-                test_link_losses.append(loss_object.link_loss.item())
-                test_link_accuracies.append(loss_object.link_accuracy)
-                test_losses.append(loss_object.loss.item())
-        print("Test Loss: {} (Pixel: {}, Link: {})".format(np.mean(test_losses), np.mean(test_pixel_losses), np.mean(test_link_losses)))
-        print("Pixel Accuracy: {:.4f}, Link Accuracy: {:.4f}".format(np.mean(test_pixel_accuracies), np.mean(test_link_accuracies)))
-        current_loss = np.mean(test_losses)
+                test_reporter.step(loss_object, steps)
+
+        current_loss = np.mean(test_reporter.losses)
         # scheduler.step(current_loss)
         if best_loss is None or current_loss < best_loss:
             best_loss = current_loss
@@ -129,11 +151,7 @@ def main():
             checkpoint_path = os.path.join(args.checkpoint, "best.pth.tar")
             print("[Epoch {} Step {}] Save checkpoint {}".format(epoch, steps, checkpoint_path))
             torch.save(state_dict, checkpoint_path)
-        test_writer.add_scalar("loss", np.mean(test_losses), steps)
-        test_writer.add_scalar("loss/pixel", np.mean(test_pixel_losses), steps)
-        test_writer.add_scalar("loss/link", np.mean(test_link_losses), steps)
-        test_writer.add_scalar("accuracy/pixel", np.mean(test_pixel_accuracies), steps)
-        test_writer.add_scalar("accuracy/link", np.mean(test_link_accuracies), steps)
+        test_reporter.flush(steps)
 
     writer.close()
 
