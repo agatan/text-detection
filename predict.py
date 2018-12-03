@@ -2,11 +2,13 @@ import os
 from typing import Tuple
 
 import torch
+import torch.nn.functional as F
 import torch.utils.data as data
 import torchvision.transforms as transforms
 # import matplotlib.pyplot as plt
 import cv2
 import numpy as np
+from icecream import ic
 
 from data import ICDAR15Dataset
 import net
@@ -29,6 +31,24 @@ def preprocess_image(image: np.ndarray) -> torch.Tensor:
     return normalize(tensor)
 
 
+def softmax_links(link_pred: torch.Tensor) -> torch.Tensor:
+    out = torch.zeros_like(link_pred)
+    for i in range(8):
+        softmaxed = link_pred[2 * i:2 * (i + 1), :, :].softmax(dim=0)
+        out[2 * i:2 * (i + 1), :, :] = softmaxed
+    return out
+
+
+def predict(pixellink: net.MobileNetV2PixelLink, image: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    pixel_preds, link_preds = pixellink(image.unsqueeze(0))
+    pixel_pred = pixel_preds.squeeze(0)
+    link_pred = link_preds.squeeze(0)
+    pixel_pred = pixel_pred.softmax(dim=0)
+    for i in range(8):
+        link_pred[2 * i:2 * (i + 1)] = link_pred[2 * i:2 * (i + 1)].softmax(0)
+    return pixel_pred, link_pred
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
@@ -44,39 +64,35 @@ def main():
 
     image = cv2.imread(args.image, cv2.IMREAD_COLOR)
     resized_image, height_ratio, width_ratio = resize_image(image)
-    image_tensor = preprocess_image(resized_image).unsqueeze(0)
+    image_tensor = preprocess_image(resized_image)
 
     with torch.no_grad():
-        pixel_pred, link_pred = pixellink(image_tensor)
+        pixel_pred, link_pred = predict(pixellink, image_tensor)
+        pixel_pred = pixel_pred.transpose(0, 1).transpose(1, 2).cpu().numpy()
+        link_pred = link_pred.transpose(0, 1).transpose(1, 2).cpu().numpy()
+        pixel_pred = cv2.resize(pixel_pred, (image.shape[1], image.shape[0]))
+        link_pred = cv2.resize(link_pred, (image.shape[1], image.shape[0]))
         instance_map = postprocess.mask_to_instance_map(pixel_pred, link_pred)
-        bounding_boxes = postprocess.instance_map_to_bboxes(instance_map, scale=scale)
+        bounding_boxes = postprocess.instance_map_to_bboxes(instance_map)
 
-        _, pixel_mask = torch.max(pixel_pred, dim=1)
-        pixel_mask = pixel_mask.squeeze_(0)
-        link_masks = []
+        pixel_mask = np.argmax(pixel_pred, axis=2)
+        link_probabilities = []
         for i in range(8):
-            link_mask = link_pred[:, 2*i:2*(i+1)].softmax(dim=1)[:, 1, :, :]
-            link_mask = link_mask.squeeze(0)
-            link_mask = link_mask * pixel_mask.float()
-            link_mask = (link_mask.cpu().numpy() * 255).astype(np.uint8)
-            link_mask = cv2.resize(link_mask, (image.shape[1], image.shape[0]))
-            link_masks.append(link_mask)
-        pixel_proba = pixel_pred.softmax(dim=1)[:, 1, :, :].squeeze(0)
-        pixel_proba = (pixel_proba.cpu().numpy() * 255).astype(np.uint8)
-        pixel_proba = cv2.resize(pixel_proba, (image.shape[1], image.shape[0]))
+            link_probability = link_pred[:, :, 2 * i + 1]
+            link_probability = link_probability * pixel_mask.astype(np.float32)
+            link_probability = (link_probability * 255).astype(np.uint8)
+            link_probabilities.append(link_probability)
+        pixel_probability = (pixel_pred[:, :, 1] * 255).astype(np.uint8)
 
     images = [
-        np.concatenate([link_masks[0], link_masks[1], link_masks[2]], axis=1),
-        np.concatenate([link_masks[3], pixel_proba, link_masks[4]], axis=1),
-        np.concatenate([link_masks[5], link_masks[6], link_masks[7]], axis=1),
+        np.concatenate([link_probabilities[0], link_probabilities[1], link_probabilities[2]], axis=1),
+        np.concatenate([link_probabilities[3], pixel_probability, link_probabilities[4]], axis=1),
+        np.concatenate([link_probabilities[5], link_probabilities[6], link_probabilities[7]], axis=1),
     ]
     concat_image = np.concatenate(images, axis=0)
     cv2.imwrite("map.png", cv2.applyColorMap(concat_image, cv2.COLORMAP_JET))
     binarized_image = (concat_image > 255 / 2).astype(np.uint8) * 255
     cv2.imwrite("binmap.png", cv2.applyColorMap(binarized_image, cv2.COLORMAP_JET))
-
-    instance_map = instance_map[0]
-    bounding_boxes = bounding_boxes[0]
 
     # colorize instance map.
     colored_instance_map = np.zeros(instance_map.shape + (3,), np.uint8)
@@ -90,8 +106,6 @@ def main():
 
     # draw boxes
     for box in bounding_boxes:
-        box[:, 0] *= height_ratio
-        box[:, 1] *= width_ratio
         xy_box = np.zeros_like(box)
         xy_box[:, 0] = box[:, 1]
         xy_box[:, 1] = box[:, 0]

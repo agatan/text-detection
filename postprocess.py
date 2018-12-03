@@ -51,7 +51,7 @@ def _link_pixels(pixel_mask: np.ndarray, link_mask: np.ndarray) -> np.ndarray:
     for point in points:
         y, x = point
         for i, (y_, x_) in enumerate(neighbors(y, x)):
-            if is_valid_coor(y_, x_, mask_height, mask_width) and link_mask[i, y_, x_] == 1:
+            if is_valid_coor(y_, x_, mask_height, mask_width) and link_mask[y_, x_, i] == 1:
                 link(point, (y_, x_))
 
     res = np.zeros((mask_height, mask_width), np.int32)
@@ -67,38 +67,28 @@ def _link_pixels(pixel_mask: np.ndarray, link_mask: np.ndarray) -> np.ndarray:
     return res
 
 
-def mask_to_instance_map(pixel_mask: torch.Tensor, link_mask: torch.Tensor) -> np.ndarray:
-    batch_size, _, mask_height, mask_width = pixel_mask.size()
+def mask_to_instance_map(pixel_mask: np.ndarray, link_mask: np.ndarray) -> np.ndarray:
+    mask_height, mask_width, _ = pixel_mask.shape
 
-    _, pixel_mask = torch.max(pixel_mask, dim=1)
-    link_neighbors = torch.zeros(batch_size, 8, mask_height, mask_width, dtype=torch.uint8)
+    pixel_mask = np.argmax(pixel_mask, axis=2)
+    link_neighbors = np.zeros((mask_height, mask_width, 8), dtype=np.uint8)
     for i in range(8):
-        _, neighbor = torch.max(link_mask[:, 2*i:2*(i+1)], dim=1)
-        link_neighbors[:, i] = neighbor
-    link_neighbors = link_neighbors * pixel_mask.unsqueeze(1).byte()
-
-    pixel_mask = pixel_mask.cpu().numpy()
-    link_neighbors = link_neighbors.cpu().numpy()
-    instance_maps = []
-    for i in range(batch_size):
-        instance_maps.append(_link_pixels(pixel_mask[i], link_neighbors[i]))
-    return np.stack(instance_maps, axis=0)
+        neighbor = np.argmax(link_mask[:, :, 2*i:2*(i+1)], axis=2)
+        link_neighbors[:, :, i] = neighbor
+    link_neighbors = link_neighbors * np.expand_dims(pixel_mask, 2).astype(np.uint8)
+    return _link_pixels(pixel_mask, link_neighbors)
 
 
-def instance_map_to_bboxes(instance_map: np.ndarray, scale: int = 4) -> List[List[np.ndarray]]:
-    batch_size, map_height, map_width = instance_map.shape
+def instance_map_to_bboxes(instance_map: np.ndarray) -> List[List[np.ndarray]]:
+    map_height, map_width = instance_map.shape
     bounding_boxes = []
-    for i in range(batch_size):
-        imap = instance_map[i]
-        num_bboxes = np.max(imap)
-        bboxes = []
-        for n in range(1, num_bboxes + 1):
-            points = np.array(list(zip(*np.where(imap == n))))
-            rect = cv2.minAreaRect(points)
-            bbox = cv2.boxPoints(rect)
-            bbox = bbox * scale
-            bbox[:, 0] = np.clip(bbox[:, 0], 0, map_height * scale)
-            bbox[:, 1] = np.clip(bbox[:, 1], 0, map_width * scale)
-            bboxes.append(bbox)
-        bounding_boxes.append(bboxes)
-    return bounding_boxes
+    num_bboxes = np.max(instance_map)
+    bboxes = []
+    for n in range(1, num_bboxes + 1):
+        points = np.array(list(zip(*np.where(instance_map == n))))
+        rect = cv2.minAreaRect(points)
+        bbox = cv2.boxPoints(rect)
+        bbox[:, 0] = np.clip(bbox[:, 0], 0, map_height)
+        bbox[:, 1] = np.clip(bbox[:, 1], 0, map_width)
+        bboxes.append(bbox)
+    return bboxes
