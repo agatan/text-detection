@@ -33,10 +33,11 @@ def main():
     parser.add_argument("--batch_size", default=32, type=int)
     parser.add_argument("--epochs", default=100, type=int)
     parser.add_argument("--scale", default=4, type=int)
-    parser.add_argument("--logdir", default="logs")
-    parser.add_argument("--checkpoint", default="checkpoint")
+    parser.add_argument("--logdir")
+    parser.add_argument("--checkpoint")
     parser.add_argument("--restore")
     parser.add_argument("--seed", default=42, type=int)
+    parser.add_argument("--excitation", choices=["cse", "sse", "scse"], default=None)
     args = parser.parse_args()
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -65,7 +66,9 @@ def main():
                 return storage
         pixellink = torch.load(args.restore, map_location=map_location).to(device)
     else:
-        pixellink = net.MobileNetV2PixelLink(args.scale).to(device)
+        excitation_cls = {"cse": net.CSE, "sse": net.SSE, "scse": net.SCSE}.get(args.excitation, None)
+        print(excitation_cls)
+        pixellink = net.MobileNetV2PixelLink(args.scale, excitation_cls=excitation_cls).to(device)
     optimizer = torch.optim.Adam(pixellink.parameters(), lr=1e-3)
 
     def step_fn(training):
