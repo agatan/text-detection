@@ -58,7 +58,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--train", default="./dataset/icdar2015/train")
-    parser.add_argument("--test", default="./dataset/icdar2015/test")
+    parser.add_argument("--test")
     parser.add_argument("--batch_size", default=32, type=int)
     parser.add_argument("--epochs", default=100, type=int)
     parser.add_argument("--scale", default=4, type=int)
@@ -89,7 +89,12 @@ def main():
     start_epoch = 0
     best_score = None
     if args.restore:
-        state_dict = torch.load(args.restore)
+        if torch.cuda.is_available():
+            map_location = None
+        else:
+            def map_location(storage, loc):
+                return storage
+        state_dict = torch.load(args.restore, map_location=map_location)
         pixellink.load_state_dict(state_dict['pixellink'])
         optimizer.load_state_dict(state_dict['optimizer'])
         steps = state_dict["steps"]
