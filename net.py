@@ -100,8 +100,47 @@ class _InvertedResidual(nn.Module):
         return self.conv(x)
 
 
+class CSE(nn.Module):
+    def __init__(self, channels, ratio=16):
+        super(CSE, self).__init__()
+        self.excitation = nn.Sequential(
+            nn.Linear(channels, channels // 16),
+            nn.ReLU(),
+            nn.Linear(channels // 16, channels),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        z = x.mean(dim=3).mean(dim=2)
+        e = self.excitation(z).unsqueeze(2).unsqueeze(3)
+        return x * e
+
+
+class SSE(nn.Module):
+    def __init__(self, channels):
+        super(SSE, self).__init__()
+        self.se = nn.Sequential(
+            nn.Conv2d(channels, 1, kernel_size=1),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        e = self.se(x)
+        return x * e
+
+
+class SCSE(nn.Module):
+    def __init__(self, channels, ratio=16):
+        super(SCSE, self).__init__()
+        self.cse = CSE(channels, ratio)
+        self.sse = SSE(channels)
+
+    def forward(self, x):
+        return self.cse(x) + self.sse(x)
+
+
 class MobileNetV2PixelLink(nn.Module):
-    def __init__(self, scale):
+    def __init__(self, scale, excitation_cls=None):
         super(MobileNetV2PixelLink, self).__init__()
         assert scale in [2, 4]
         self.scale = scale
@@ -130,19 +169,31 @@ class MobileNetV2PixelLink(nn.Module):
             features.append(nn.Sequential(*layers))
         last_channels = 1280
         features.append(_conv1x1_bn(input_channels, last_channels))
-        self.block1 = nn.Sequential(*features[:2])
-        self.block2 = nn.Sequential(*features[2:3])
-        self.block3 = nn.Sequential(*features[3:4])
-        self.block4 = nn.Sequential(*features[4:6])
-        self.block5 = nn.Sequential(*features[6:])
+        self.excitation_cls = excitation_cls
+        self.block1 = self._layers_with_excitation_as_need(features[:2], 16)
+        self.block2 = self._layers_with_excitation_as_need(features[2:3], 24)
+        self.block3 = self._layers_with_excitation_as_need(features[3:4], 32)
+        self.block4 = self._layers_with_excitation_as_need(features[4:6], 96)
+        self.block5 = self._layers_with_excitation_as_need(features[6:], 1280)
         out_channels = 2 + 8 * 2  # text/non-text, 8 neighbors
-        self.out_conv1 = nn.Conv2d(1280, out_channels, kernel_size=1)
-        self.out_conv2 = nn.Conv2d(96, out_channels, kernel_size=1)
-        self.out_conv3 = nn.Conv2d(32, out_channels, kernel_size=1)
-        self.out_conv4 = nn.Conv2d(24, out_channels, kernel_size=1)
+        self.out_conv1 = self._out_conv_with_excitation_as_need(1280, out_channels)
+        self.out_conv2 = self._out_conv_with_excitation_as_need(96, out_channels)
+        self.out_conv3 = self._out_conv_with_excitation_as_need(32, out_channels)
+        self.out_conv4 = self._out_conv_with_excitation_as_need(24, out_channels)
         if self.scale == 2:
-            self.out_conv5 = nn.Conv2d(16, out_channels, kernel_size=1)
+            self.out_conv5 = self._out_conv_with_excitation_as_need(16, out_channels)
         self.final_conv = nn.Conv2d(out_channels, out_channels, kernel_size=1)
+
+    def _layers_with_excitation_as_need(self, layers, channels):
+        if self.excitation_cls is not None:
+            layers.append(self.excitation_cls(channels))
+        return nn.Sequential(*layers)
+
+    def _out_conv_with_excitation_as_need(self, channels, out_channels):
+        conv = nn.Conv2d(channels, out_channels, kernel_size=1)
+        if self.excitation_cls is not None:
+            return nn.Sequential(conv, self.excitation_cls(out_channels))
+        return conv
 
     def forward(self, x):
         x1 = self.block1(x)
