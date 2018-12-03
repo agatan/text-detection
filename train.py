@@ -19,6 +19,12 @@ import net
 LOG_FREQ = 200
 
 
+def create_summary_writer(model, dummy, logdir):
+    writer = SummaryWriter(logdir)
+    writer.add_graph(model, dummy)
+    return writer
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
@@ -92,8 +98,9 @@ def main():
                 }
         return fn
 
-    writer = SummaryWriter(os.path.join(args.logdir, "train"))
-    test_writer = SummaryWriter(os.path.join(args.logdir, "test"))
+    dummy = torch.randn(1, 3, image_size[0], image_size[1], dtype=torch.float).to(device)
+    writer = create_summary_writer(pixellink, dummy, os.path.join(args.logdir, "train"))
+    test_writer = create_summary_writer(pixellink, dummy, os.path.join(args.logdir, "test"))
 
     trainer = Engine(step_fn(training=True))
     evaluator = Engine(step_fn(training=False))
