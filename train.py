@@ -99,12 +99,12 @@ def main():
 
     os.makedirs(args.checkpoint, exist_ok=True)
     writer = SummaryWriter(os.path.join(args.logdir, "train"))
-    reporter = Reporter("train", writer)
+    reporter = Reporter("train", writer, 200)
     test_writer = SummaryWriter(os.path.join(args.logdir, "test"))
     test_reporter = Reporter("test", test_writer)
     for epoch in range(start_epoch, args.epochs):
         print("[Epoch {}]".format(epoch))
-        steps_per_epoch = min(200, (len(dataset) - 1) // args.batch_size + 1)
+        steps_per_epoch = (len(dataset) - 1) // args.batch_size + 1
         for images, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_masks in tqdm(itertools.islice(dataloader, steps_per_epoch), total=steps_per_epoch):
             pixellink.train()
             optimizer.zero_grad()
@@ -138,19 +138,18 @@ def main():
 
         current_score = np.mean(test_reporter.pixel_accuracies) * np.mean(test_reporter.link_accuracies)
         # scheduler.step(current_loss)
-        if best_score is None or current_score > best_score:
-            best_score = current_score
-            state_dict = {
-                "pixellink": pixellink.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "steps": steps,
-                "epoch": epoch,
-                "scale": args.scale,
-                "best_score": best_score,
-            }
-            checkpoint_path = os.path.join(args.checkpoint, "best.pth.tar")
-            print("[Epoch {} Step {}] Save checkpoint {}".format(epoch, steps, checkpoint_path))
-            torch.save(state_dict, checkpoint_path)
+        best_score = current_score
+        state_dict = {
+            "pixellink": pixellink.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "steps": steps,
+            "epoch": epoch,
+            "scale": args.scale,
+            "best_score": best_score,
+        }
+        checkpoint_path = os.path.join(args.checkpoint, "epoch-{}.pth.tar".format(epoch))
+        print("[Epoch {} Step {}] Save checkpoint {}".format(epoch, steps, checkpoint_path))
+        torch.save(state_dict, checkpoint_path)
         test_reporter.flush(steps)
 
     writer.close()
