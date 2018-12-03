@@ -281,7 +281,7 @@ class PixelLinkFocalLoss(PixelLinkLoss):
         self.pixel_cross_entropy = FocalLoss(alpha=0.25)(input, target)
         non_ignored = (target == 1) + (neg_pixel_mask == 1)
         self.pixel_cross_entropy *= non_ignored.float()
-        loss = torch.sum(self.pixel_cross_entropy, dim=1)  # / torch.sum(non_ignored, dim=1).float().clamp(min=1e-8)
+        loss = torch.sum(self.pixel_cross_entropy, dim=1) / torch.sum(non_ignored, dim=1).float().clamp(min=1e-8)
         self.pixel_loss = torch.mean(loss)
 
     def _set_link_loss(self, input, target, positive_mask):
@@ -295,7 +295,7 @@ class PixelLinkFocalLoss(PixelLinkLoss):
             link_cross_entropies[:, i] = focal(inp, tar)
         link_cross_entropies *= positive_mask
         pixels_per_image = torch.sum(positive_mask.contiguous().view(batch_size, -1), dim=1)
-        loss = torch.sum(link_cross_entropies.view(batch_size, -1), dim=1) # / pixels_per_image.float().clamp(min=1e-8)
+        loss = torch.sum(link_cross_entropies.view(batch_size, -1), dim=1) / pixels_per_image.float().clamp(min=1e-8)
         self.link_loss = torch.mean(loss)
 
 
