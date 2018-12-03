@@ -72,7 +72,7 @@ def main():
         pixel_pred, link_pred = predict(pixellink, image_tensor)
         pixel_pred = pixel_pred.transpose(0, 1).transpose(1, 2).cpu().numpy()
         link_pred = link_pred.transpose(0, 1).transpose(1, 2).cpu().numpy()
-        shrink_ratio = 1
+        shrink_ratio = 2
         pixel_pred = cv2.resize(pixel_pred, (image.shape[1] // shrink_ratio, image.shape[0] // shrink_ratio))
         link_pred = cv2.resize(link_pred, (image.shape[1] // shrink_ratio, image.shape[0] // shrink_ratio))
         instance_map = postprocess.mask_to_instance_map(pixel_pred, link_pred)
