@@ -70,9 +70,10 @@ def main():
         pixel_pred, link_pred = predict(pixellink, image_tensor)
         pixel_pred = pixel_pred.transpose(0, 1).transpose(1, 2).cpu().numpy()
         link_pred = link_pred.transpose(0, 1).transpose(1, 2).cpu().numpy()
-        pixel_pred = cv2.resize(pixel_pred, (image.shape[1], image.shape[0]))
-        link_pred = cv2.resize(link_pred, (image.shape[1], image.shape[0]))
+        pixel_pred = cv2.resize(pixel_pred, (image.shape[1] // 2, image.shape[0] // 2))
+        link_pred = cv2.resize(link_pred, (image.shape[1] // 2, image.shape[0] // 2))
         instance_map = postprocess.mask_to_instance_map(pixel_pred, link_pred)
+        instance_map = cv2.resize(instance_map, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
         bounding_boxes = postprocess.instance_map_to_bboxes(instance_map)
 
         pixel_mask = np.argmax(pixel_pred, axis=2)
