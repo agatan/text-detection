@@ -54,13 +54,10 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("image")
-    parser.add_argument("--checkpoint", required=True)
+    parser.add_argument("--model", required=True)
     args = parser.parse_args()
 
-    state_dict = torch.load(args.checkpoint, map_location=lambda storage, loc: storage)
-    scale = state_dict['scale']
-    pixellink = net.MobileNetV2PixelLink(scale=scale)
-    pixellink.load_state_dict(state_dict['pixellink'])
+    pixellink = torch.load(args.model, map_location=lambda storage, loc: storage)
     pixellink.eval()
 
     image = cv2.imread(args.image, cv2.IMREAD_COLOR)
