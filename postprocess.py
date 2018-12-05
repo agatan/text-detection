@@ -66,13 +66,13 @@ def _link_pixels(pixel_mask: np.ndarray, link_mask: np.ndarray) -> np.ndarray:
     return res
 
 
-def mask_to_instance_map(pixel_mask: np.ndarray, link_mask: np.ndarray) -> np.ndarray:
+def mask_to_instance_map(pixel_mask: np.ndarray, link_mask: np.ndarray, mask_threshold: float = 0.5, link_threshold: float = 0.5) -> np.ndarray:
     mask_height, mask_width, _ = pixel_mask.shape
 
-    pixel_mask = np.argmax(pixel_mask, axis=2)
+    pixel_mask = pixel_mask[:, :, 1] > mask_threshold
     link_neighbors = np.zeros((mask_height, mask_width, 8), dtype=np.uint8)
     for i in range(8):
-        neighbor = np.argmax(link_mask[:, :, 2*i:2*(i+1)], axis=2)
+        neighbor = link_mask[:, :, 2 * i + 1] > link_threshold
         link_neighbors[:, :, i] = neighbor
     link_neighbors = link_neighbors * np.expand_dims(pixel_mask, 2).astype(np.uint8)
     return _link_pixels(pixel_mask, link_neighbors)
