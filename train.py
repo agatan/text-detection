@@ -49,10 +49,11 @@ def main():
         test_dataset = ICDAR15Dataset(os.path.join(args.test, "images"), os.path.join(args.test, "labels"), image_size=image_size, scale=args.scale, training=False)
     else:
         n_test = min(1000, (len(dataset) * 0.05))
-        indices = np.arange(len(dataset))
-        dataset = torch.utils.data.Subset(dataset, indices[n_test:])
-        test_dataset = torch.utils.data.Subset(dataset, indices[:n_test])
-        print(len(dataset), len(test_dataset))
+        dataset, test_dataset = torch.utils.data.random_split(dataset, [len(dataset) - n_test, n_test])
+        # indices = np.arange(len(dataset))
+        # test_dataset = torch.utils.data.Subset(dataset, indices[:n_test])
+        # dataset = torch.utils.data.Subset(dataset, indices[n_test:])
+        # print(len(dataset), len(test_dataset))
     test_dataloader = data.DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=8)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -98,6 +99,7 @@ def main():
                     "loss/link": loss_object.link_loss.item(),
                     "accuracy/pixel": loss_object.pixel_accuracy,
                     "accuracy/link": np.mean(loss_object.link_accuracy),
+                    "accuracy/positive_pixel": loss_object.positive_pixel_accuracy,
                 }
         return fn
 
@@ -119,7 +121,7 @@ def main():
                                 to_save={"net": pixellink})
     timer = Timer(average=True)
 
-    monitoring_metrics = ["loss", "loss/pixel", "loss/link", "accuracy/pixel", "accuracy/link"]
+    monitoring_metrics = ["loss", "loss/pixel", "loss/link", "accuracy/pixel", "accuracy/link", "accuracy/positive_pixel"]
     for metric in monitoring_metrics:
         def output_transform(m):
             def fn(x):
