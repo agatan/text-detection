@@ -66,7 +66,7 @@ class ICDAR15Dataset(data.Dataset):
         return image, pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask
 
     def _train_transform(self, image, labels):
-        if np.random.random() < 0.2:
+        if True or np.random.random() < 0.2:
             image, labels = self._random_rotate_with_labels(image, labels)
         image, labels = self._random_transform_aspect_with_labels(image, labels)
         image, labels = self._random_crop_with_labels(image, labels)
