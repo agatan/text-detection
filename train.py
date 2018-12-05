@@ -37,7 +37,7 @@ def main():
     parser.add_argument("--checkpoint")
     parser.add_argument("--restore")
     parser.add_argument("--seed", default=42, type=int)
-    parser.add_argument("--excitation", choices=["cse", "sse", "scse"], default=None)
+    parser.add_argument("--excitation", choices=["cse", "sse", "scse", "none"], default=None)
     args = parser.parse_args()
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
