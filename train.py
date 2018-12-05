@@ -87,8 +87,8 @@ def main():
                 pixel_weights = pixel_weights.to(device)
                 link_masks = link_masks.to(device)
                 pixel_input, link_input = pixellink(images)
-                # loss_object = net.PixelLinkLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_input, link_masks)
-                loss_object = net.PixelLinkFocalLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_input, link_masks)
+                loss_object = net.PixelLinkLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_input, link_masks)
+                # loss_object = net.PixelLinkFocalLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_input, link_masks)
                 if training:
                     loss_object.loss.backward()
                     optimizer.step()
