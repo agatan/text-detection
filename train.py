@@ -117,7 +117,16 @@ def main():
         require_empty=False,
         score_function=lambda engine: -engine.state.metrics["loss"],
         score_name="loss")
+    biggest_checkpoint_handler = ModelCheckpoint(
+        args.checkpoint,
+        "biggest",
+        n_saved=5,
+        score_function=lambda engine: engine.state.metrics["loss"],
+        score_name="loss",
+        require_empty=False)
     evaluator.add_event_handler(Events.COMPLETED, handler=checkpoint_handler,
+                                to_save={"net": pixellink})
+    evaluator.add_event_handler(Events.COMPLETED, handler=biggest_checkpoint_handler,
                                 to_save={"net": pixellink})
     timer = Timer(average=True)
 
