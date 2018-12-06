@@ -27,6 +27,7 @@ def create_summary_writer(model, dummy, logdir):
 
 def main():
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--train", default="./dataset/icdar2015/train")
     parser.add_argument("--test")
@@ -37,41 +38,63 @@ def main():
     parser.add_argument("--checkpoint")
     parser.add_argument("--restore")
     parser.add_argument("--seed", default=42, type=int)
-    parser.add_argument("--excitation", choices=["cse", "sse", "scse", "none"], default=None)
+    parser.add_argument(
+        "--excitation", choices=["cse", "sse", "scse", "none"], default=None
+    )
     args = parser.parse_args()
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
     image_size = (512, 512)
     classes = [
-        'last_name_ja',
-        'first_name_ja',
-        'last_name_en',
-        'first_name_en',
-        'last_name_furigana',
-        'first_name_furigana',
-        'company',
-        'position',
-        'department',
-        'email',
-        'phone',
-        'mobile',
-        'fax',
-        'url',
-        'address',
+        "last_name_ja",
+        "first_name_ja",
+        "last_name_en",
+        "first_name_en",
+        "last_name_furigana",
+        "first_name_furigana",
+        "company",
+        "position",
+        "department",
+        "email",
+        "phone",
+        "mobile",
+        "fax",
+        "url",
+        "address",
     ]
-    dataset = ICDAR15Dataset(os.path.join(args.train, "images"), os.path.join(args.train, "labels"), classes, image_size=image_size, scale=args.scale, training=True)
-    dataloader = data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
+    dataset = ICDAR15Dataset(
+        os.path.join(args.train, "images"),
+        os.path.join(args.train, "labels"),
+        classes,
+        image_size=image_size,
+        scale=args.scale,
+        training=True,
+    )
+    dataloader = data.DataLoader(
+        dataset, batch_size=args.batch_size, shuffle=True, num_workers=0
+    )
     if args.test is not None:
-        test_dataset = ICDAR15Dataset(os.path.join(args.test, "images"), os.path.join(args.test, "labels"), classes, image_size=image_size, scale=args.scale, training=False)
+        test_dataset = ICDAR15Dataset(
+            os.path.join(args.test, "images"),
+            os.path.join(args.test, "labels"),
+            classes,
+            image_size=image_size,
+            scale=args.scale,
+            training=False,
+        )
     else:
         n_test = min(1000, (len(dataset) * 0.05))
-        dataset, test_dataset = torch.utils.data.random_split(dataset, [len(dataset) - n_test, n_test])
+        dataset, test_dataset = torch.utils.data.random_split(
+            dataset, [len(dataset) - n_test, n_test]
+        )
         # indices = np.arange(len(dataset))
         # test_dataset = torch.utils.data.Subset(dataset, indices[:n_test])
         # dataset = torch.utils.data.Subset(dataset, indices[n_test:])
         # print(len(dataset), len(test_dataset))
-    test_dataloader = data.DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=0)
+    test_dataloader = data.DataLoader(
+        test_dataset, batch_size=8, shuffle=False, num_workers=0
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # pixellink = net.PixelLink(args.scale, pretrained=False).to(device)
@@ -80,13 +103,19 @@ def main():
         if torch.cuda.is_available():
             map_location = None
         else:
+
             def map_location(storage, loc):
                 return storage
+
         pixellink = torch.load(args.restore, map_location=map_location).to(device)
     else:
-        excitation_cls = {"cse": net.CSE, "sse": net.SSE, "scse": net.SCSE}.get(args.excitation, None)
+        excitation_cls = {"cse": net.CSE, "sse": net.SSE, "scse": net.SCSE}.get(
+            args.excitation, None
+        )
         print(excitation_cls)
-        pixellink = net.MobileNetV2PixelLink(args.scale, len(classes), excitation_cls=excitation_cls).to(device)
+        pixellink = net.MobileNetV2PixelLink(
+            args.scale, len(classes), excitation_cls=excitation_cls
+        ).to(device)
     optimizer = torch.optim.Adam(pixellink.parameters(), lr=1e-3)
 
     def step_fn(training):
@@ -96,7 +125,9 @@ def main():
             else:
                 pixellink.eval()
             with torch.set_grad_enabled(training):
-                images, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_masks, class_masks = batch
+                images, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_masks, class_masks = (
+                    batch
+                )
                 if training:
                     optimizer.zero_grad()
                 images = images.to(device)
@@ -105,8 +136,18 @@ def main():
                 pixel_weights = pixel_weights.to(device)
                 link_masks = link_masks.to(device)
                 class_masks = class_masks.to(device)
-                pixel_input, link_input, class_input = pixellink(images)
-                loss_object = net.PixelLinkLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_input, link_masks, class_input, class_masks)
+                # pixel_input, link_input, class_input = pixellink(images)
+                link_input, pixel_input = pixellink(images)
+                loss_object = net.PixelLinkLoss(
+                    pixel_input,
+                    pos_pixel_masks,
+                    neg_pixel_masks,
+                    pixel_weights,
+                    link_input,
+                    link_masks,
+                    # class_input,
+                    class_masks,
+                )
                 # loss_object = net.PixelLinkFocalLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_input, link_masks, class_masks)
                 if training:
                     loss_object.loss.backward()
@@ -115,17 +156,22 @@ def main():
                     "loss": loss_object.loss.item(),
                     "loss/pixel": loss_object.pixel_loss.item(),
                     "loss/link": loss_object.link_loss.item(),
-                    "loss/class": loss_object.class_loss.item(),
+                    # "loss/class": loss_object.class_loss.item(),
                     "accuracy/pixel": loss_object.pixel_accuracy,
                     "accuracy/link": np.mean(loss_object.link_accuracy),
                     "accuracy/positive_pixel": loss_object.positive_pixel_accuracy,
-                    "accuracy/class": loss_object.class_accuracy,
+                    # "accuracy/class": loss_object.class_accuracy,
                 }
+
         return fn
 
-    dummy = torch.randn(1, 3, image_size[0], image_size[1], dtype=torch.float).to(device)
+    dummy = torch.randn(1, 3, image_size[0], image_size[1], dtype=torch.float).to(
+        device
+    )
     writer = create_summary_writer(pixellink, dummy, os.path.join(args.logdir, "train"))
-    test_writer = create_summary_writer(pixellink, dummy, os.path.join(args.logdir, "test"))
+    test_writer = create_summary_writer(
+        pixellink, dummy, os.path.join(args.logdir, "test")
+    )
 
     trainer = Engine(step_fn(training=True))
     evaluator = Engine(step_fn(training=False))
@@ -136,31 +182,48 @@ def main():
         n_saved=5,
         require_empty=False,
         score_function=lambda engine: -engine.state.metrics["loss"],
-        score_name="loss")
+        score_name="loss",
+    )
     biggest_checkpoint_handler = ModelCheckpoint(
         args.checkpoint,
         "biggest",
         n_saved=5,
         score_function=lambda engine: engine.state.metrics["loss"],
         score_name="loss",
-        require_empty=False)
-    evaluator.add_event_handler(Events.COMPLETED, handler=checkpoint_handler,
-                                to_save={"net": pixellink})
-    evaluator.add_event_handler(Events.COMPLETED, handler=biggest_checkpoint_handler,
-                                to_save={"net": pixellink})
+        require_empty=False,
+    )
+    evaluator.add_event_handler(
+        Events.COMPLETED, handler=checkpoint_handler, to_save={"net": pixellink}
+    )
+    evaluator.add_event_handler(
+        Events.COMPLETED, handler=biggest_checkpoint_handler, to_save={"net": pixellink}
+    )
     timer = Timer(average=True)
 
     monitoring_metrics = [
-        "loss", "loss/pixel", "loss/link", "loss/class",
-        "accuracy/pixel", "accuracy/link", "accuracy/positive_pixel", "accuracy/class",
+        "loss",
+        "loss/pixel",
+        "loss/link",
+        # "loss/class",
+        "accuracy/pixel",
+        "accuracy/link",
+        "accuracy/positive_pixel",
+        # "accuracy/class",
     ]
     for metric in monitoring_metrics:
+
         def output_transform(m):
             def fn(x):
                 return x[m]
+
             return fn
-        RunningAverage(output_transform=output_transform(metric)).attach(trainer, metric)
-        RunningAverage(output_transform=output_transform(metric)).attach(evaluator, metric)
+
+        RunningAverage(output_transform=output_transform(metric)).attach(
+            trainer, metric
+        )
+        RunningAverage(output_transform=output_transform(metric)).attach(
+            evaluator, metric
+        )
 
     pbar = ProgressBar()
     pbar.attach(trainer, metric_names=monitoring_metrics)
@@ -179,7 +242,7 @@ def main():
             max_i=len(dataloader),
         )
         for key, value in engine.state.metrics.items():
-            message += ' | {key}: {value}'.format(key=key, value=str(round(value, 5)))
+            message += " | {key}: {value}".format(key=key, value=str(round(value, 5)))
         pbar.log_message(message)
 
     @trainer.on(Events.ITERATION_COMPLETED)
@@ -197,20 +260,24 @@ def main():
             max_i=len(dataloader),
         )
         for key, value in evaluator.state.metrics.items():
-            message += ' | {key}: {value}'.format(key=key, value=str(round(value, 5)))
+            message += " | {key}: {value}".format(key=key, value=str(round(value, 5)))
         pbar.log_message(message)
 
-    timer.attach(trainer, start=Events.EPOCH_STARTED,
-                 resume=Events.ITERATION_STARTED,
-                 pause=Events.ITERATION_COMPLETED,
-                 step=Events.ITERATION_COMPLETED)
+    timer.attach(
+        trainer,
+        start=Events.EPOCH_STARTED,
+        resume=Events.ITERATION_STARTED,
+        pause=Events.ITERATION_COMPLETED,
+        step=Events.ITERATION_COMPLETED,
+    )
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def print_time(engine):
-        pbar.log_message("Epoch {} done. Time per batch: {:.3f}[s]".format(
-            engine.state.epoch,
-            timer.value(),
-        ))
+        pbar.log_message(
+            "Epoch {} done. Time per batch: {:.3f}[s]".format(
+                engine.state.epoch, timer.value()
+            )
+        )
         timer.reset()
 
     @trainer.on(Events.EXCEPTION_RAISED)
@@ -225,5 +292,6 @@ def main():
     trainer.run(dataloader, args.epochs)
     writer.close()
     test_writer.close()
+
 
 main()

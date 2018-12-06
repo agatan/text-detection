@@ -41,7 +41,7 @@ def softmax_links(link_pred: torch.Tensor) -> torch.Tensor:
 
 
 def predict(pixellink: net.MobileNetV2PixelLink, image: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    pixel_preds, link_preds = pixellink(image.unsqueeze(0))
+    pixel_preds, link_preds, _ = pixellink(image.unsqueeze(0))
     pixel_pred = pixel_preds.squeeze(0)
     link_pred = link_preds.squeeze(0)
     pixel_pred = pixel_pred.softmax(dim=0)
@@ -55,6 +55,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("image")
     parser.add_argument("--model", required=True)
+    parser.add_argument("--mask-thres", type=float, default=0.5)
+    parser.add_argument("--link-thres", type=float, default=0.5)
     args = parser.parse_args()
 
     pixellink = torch.load(args.model, map_location=lambda storage, loc: storage)
@@ -72,7 +74,7 @@ def main():
         shrink_ratio = 2
         pixel_pred = cv2.resize(pixel_pred, (image.shape[1] // shrink_ratio, image.shape[0] // shrink_ratio))
         link_pred = cv2.resize(link_pred, (image.shape[1] // shrink_ratio, image.shape[0] // shrink_ratio))
-        instance_map = postprocess.mask_to_instance_map(pixel_pred, link_pred)
+        instance_map = postprocess.mask_to_instance_map(pixel_pred, link_pred, args.mask_thres, args.link_thres)
         instance_map = cv2.resize(instance_map, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
         bounding_boxes = postprocess.instance_map_to_bboxes(instance_map)
         print("Inference + Postprocess: {:.4f}s".format(time.time() - start))

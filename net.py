@@ -23,7 +23,7 @@ class PixelLink(nn.Module):
             nn.ReLU(inplace=True),
         )
 
-        out_channels = 2 + 8 * 2 + self.n_classes  # text/non-text, 8 neighbors link
+        out_channels = 8 * 2 + (1 + self.n_classes)  # text/non-text, 8 neighbors link
         self.out_conv1 = nn.Conv2d(512, out_channels, kernel_size=1)
         self.out_conv2 = nn.Conv2d(512, out_channels, kernel_size=1)
         self.out_conv3 = nn.Conv2d(256, out_channels, kernel_size=1)
@@ -46,12 +46,23 @@ class PixelLink(nn.Module):
             o = o2
         o = self.last_conv(o)
         # Returns text/non-text, 8 neighbors logits
-        return o[:, :2, :, :], o[:, 2:-self.n_classes, :, :], o[:, -self.n_classes:, :, :]
+        return (
+            o[:, :2, :, :],
+            o[:, 2 : -self.n_classes, :, :],
+            o[:, -self.n_classes :, :, :],
+        )
 
 
 def _conv_bn(in_channels, out_channels, stride):
     return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False),
+        nn.Conv2d(
+            in_channels,
+            out_channels,
+            kernel_size=3,
+            stride=stride,
+            padding=1,
+            bias=False,
+        ),
         nn.BatchNorm2d(out_channels),
         nn.ReLU6(inplace=True),
     )
@@ -72,11 +83,21 @@ class _InvertedResidual(nn.Module):
         if expand_ratio == 1:
             self.conv = nn.Sequential(
                 # depthwise
-                nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=stride, padding=1, bias=False, groups=in_channels),
+                nn.Conv2d(
+                    in_channels,
+                    in_channels,
+                    kernel_size=3,
+                    stride=stride,
+                    padding=1,
+                    bias=False,
+                    groups=in_channels,
+                ),
                 nn.BatchNorm2d(in_channels),
                 nn.ReLU6(inplace=True),
                 # pointwise
-                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, bias=False),
+                nn.Conv2d(
+                    in_channels, out_channels, kernel_size=1, stride=1, bias=False
+                ),
                 nn.BatchNorm2d(out_channels),
             )
         else:
@@ -87,11 +108,21 @@ class _InvertedResidual(nn.Module):
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # depthwise
-                nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, stride=stride, padding=1, bias=False, groups=hidden_dim),
+                nn.Conv2d(
+                    hidden_dim,
+                    hidden_dim,
+                    kernel_size=3,
+                    stride=stride,
+                    padding=1,
+                    bias=False,
+                    groups=hidden_dim,
+                ),
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # pointwise
-                nn.Conv2d(hidden_dim, out_channels, kernel_size=1, stride=1, bias=False),
+                nn.Conv2d(
+                    hidden_dim, out_channels, kernel_size=1, stride=1, bias=False
+                ),
                 nn.BatchNorm2d(out_channels),
             )
 
@@ -120,10 +151,7 @@ class CSE(nn.Module):
 class SSE(nn.Module):
     def __init__(self, channels):
         super(SSE, self).__init__()
-        self.se = nn.Sequential(
-            nn.Conv2d(channels, 1, kernel_size=1),
-            nn.Sigmoid(),
-        )
+        self.se = nn.Sequential(nn.Conv2d(channels, 1, kernel_size=1), nn.Sigmoid())
 
     def forward(self, x):
         e = self.se(x)
@@ -164,9 +192,17 @@ class MobileNetV2PixelLink(nn.Module):
             layers = []
             for j in range(n):
                 if j == 0:
-                    layers.append(_InvertedResidual(input_channels, output_channels, stride=s, expand_ratio=t))
+                    layers.append(
+                        _InvertedResidual(
+                            input_channels, output_channels, stride=s, expand_ratio=t
+                        )
+                    )
                 else:
-                    layers.append(_InvertedResidual(input_channels, output_channels, stride=1, expand_ratio=t))
+                    layers.append(
+                        _InvertedResidual(
+                            input_channels, output_channels, stride=1, expand_ratio=t
+                        )
+                    )
                 input_channels = output_channels
             features.append(nn.Sequential(*layers))
         last_channels = 1280
@@ -177,7 +213,7 @@ class MobileNetV2PixelLink(nn.Module):
         self.block3 = self._layers_with_excitation_as_need(features[3:4], 32)
         self.block4 = self._layers_with_excitation_as_need(features[4:6], 96)
         self.block5 = self._layers_with_excitation_as_need(features[6:], 1280)
-        out_channels = 2 + 8 * 2 + self.n_classes # text/non-text, 8 neighbors, classes
+        out_channels = 8 * 2 + (1 + self.n_classes)  # 8 neighbors, negative + classes
         self.out_conv1 = self._out_conv_with_excitation_as_need(1280, out_channels)
         self.out_conv2 = self._out_conv_with_excitation_as_need(96, out_channels)
         self.out_conv3 = self._out_conv_with_excitation_as_need(32, out_channels)
@@ -213,22 +249,39 @@ class MobileNetV2PixelLink(nn.Module):
             o1 = o2
         o = self.final_conv(o1)
         # Returns text/non-text, 8 neighbors logits
-        return o[:, :2, :, :], o[:, 2:-self.n_classes, :, :], o[:, -self.n_classes:, :, :]
+        return (o[:, :16, :, :], o[:, 16:, :, :])
+
 
 class PixelLinkLoss:
-    def __init__(self, pixel_input, pixel_target, neg_pixel_masks, pixel_weight, link_input, link_target, class_input, class_target, r=3, l=2):
-        self._set_pixel_weight_and_loss(pixel_input, pixel_target, neg_pixel_masks, pixel_weight, r=r)
-        self._set_class_loss(class_input, class_target)
-        self._set_class_accuracy(class_input, class_target, pixel_target)
+    def __init__(
+        self,
+        pixel_input,
+        pixel_target,
+        neg_pixel_masks,
+        pixel_weight,
+        link_input,
+        link_target,
+        # class_input,
+        class_target,
+        r=3,
+        l=2,
+    ):
+        self._set_pixel_weight_and_loss(
+            pixel_input, pixel_target, neg_pixel_masks, pixel_weight, r=r
+        )
+        # self._set_class_loss(class_input, class_target)
+        # self._set_class_accuracy(class_input, class_target, pixel_target)
         self._set_link_loss(link_input, link_target)
         self._set_pixel_accuracy(pixel_input, pixel_target, neg_pixel_masks)
         self._set_link_accuracy(link_input, link_target, pixel_target)
-        self.loss = l * self.pixel_loss + self.link_loss + self.class_loss
+        self.loss = l * self.pixel_loss + self.link_loss  # + self.class_loss
 
-    def _set_pixel_weight_and_loss(self, input, target, neg_pixel_masks, pixel_weight, r):
+    def _set_pixel_weight_and_loss(
+        self, input, target, neg_pixel_masks, pixel_weight, r
+    ):
         batch_size = input.size(0)
         softmax_input = F.softmax(input, dim=1)
-        self.pixel_cross_entropy = F.cross_entropy(input, target, reduction='none')
+        self.pixel_cross_entropy = F.cross_entropy(input, target, reduction="none")
         self.area_per_image = torch.sum(target.view(batch_size, -1), dim=1)
         int_area_per_image = self.area_per_image.type(torch.int).detach().tolist()
         self.area_per_image = self.area_per_image.type(torch.float32)
@@ -244,33 +297,55 @@ class PixelLinkLoss:
             topk, _ = torch.topk(-wrong, self.neg_area_per_image[i].item())
             if topk.size(0) != 0:
                 self.neg_pixel_weight[i][softmax_input[i, 0] <= -topk[-1]] = 1
-                self.neg_pixel_weight[i] = self.neg_pixel_weight[i] & (neg_pixel_masks[i] == 1)
+                self.neg_pixel_weight[i] = self.neg_pixel_weight[i] & (
+                    neg_pixel_masks[i] == 1
+                )
 
-        self.pixel_weight = self.pos_pixel_weight + self.neg_pixel_weight.type(torch.float32)
-        weighted_pixel_cross_entropy_pos = (self.pos_pixel_weight * self.pixel_cross_entropy).view(batch_size, -1)
-        weighted_pixel_cross_entropy_neg = (self.neg_pixel_weight.type(torch.float32) * self.pixel_cross_entropy).view(batch_size, -1)
-        weighted_pixel_cross_entropy = weighted_pixel_cross_entropy_pos + weighted_pixel_cross_entropy_neg
-        self.pixel_loss = weighted_pixel_cross_entropy.sum() / (self.area_per_image + self.neg_area_per_image.type(torch.float32)).sum()
+        self.pixel_weight = self.pos_pixel_weight + self.neg_pixel_weight.type(
+            torch.float32
+        )
+        weighted_pixel_cross_entropy_pos = (
+            self.pos_pixel_weight * self.pixel_cross_entropy
+        ).view(batch_size, -1)
+        weighted_pixel_cross_entropy_neg = (
+            self.neg_pixel_weight.type(torch.float32) * self.pixel_cross_entropy
+        ).view(batch_size, -1)
+        weighted_pixel_cross_entropy = (
+            weighted_pixel_cross_entropy_pos + weighted_pixel_cross_entropy_neg
+        )
+        self.pixel_loss = (
+            weighted_pixel_cross_entropy.sum()
+            / (self.area_per_image + self.neg_area_per_image.type(torch.float32)).sum()
+        )
 
     def _set_pixel_accuracy(self, input, target, neg_pixel_mask):
         input = input.detach()
         _, argmax = torch.max(input, dim=1)
         positive_count = torch.sum((argmax == 1) * (target == 1)).item()
         negative_count = torch.sum((argmax == 0) * (neg_pixel_mask == 1)).item()
-        elt_count = torch.sum(target == 1).item() + torch.sum(neg_pixel_mask == 1).item()
+        elt_count = (
+            torch.sum(target == 1).item() + torch.sum(neg_pixel_mask == 1).item()
+        )
         self.pixel_accuracy = (positive_count + negative_count) / float(elt_count)
         if torch.sum(target == 1).item() != 0:
-            self.positive_pixel_accuracy = positive_count / float(torch.sum(target == 1).item())
+            self.positive_pixel_accuracy = positive_count / float(
+                torch.sum(target == 1).item()
+            )
         else:
             self.positive_pixel_accuracy = 0.0
 
     def _set_class_loss(self, class_input, class_target):
-        class_cross_entropies = F.cross_entropy(class_input, class_target, reduction='none')
+        class_cross_entropies = F.cross_entropy(
+            class_input, class_target, reduction="none"
+        )
         positive_count = (self.pos_pixel_weight != 0).sum().float().item()
         if positive_count == 0:
             self.class_loss = 0
         else:
-            self.class_loss = torch.sum(class_cross_entropies * self.pos_pixel_weight) / positive_count
+            self.class_loss = (
+                torch.sum(class_cross_entropies * self.pos_pixel_weight)
+                / positive_count
+            )
 
     def _set_class_accuracy(self, class_input, class_target, pixel_mask):
         class_input = class_input.detach()
@@ -280,25 +355,39 @@ class PixelLinkLoss:
             return
         pixel_mask = pixel_mask.byte()
         _, argmax = torch.max(class_input, dim=1)
-        self.class_accuracy = torch.sum((argmax == class_target) * pixel_mask).item() / elt_count
+        self.class_accuracy = (
+            torch.sum((argmax == class_target) * pixel_mask).item() / elt_count
+        )
 
     def _set_link_loss(self, link_input, link_target):
         batch_size = link_input.size(0)
         positive_pixels = self.pos_pixel_weight.unsqueeze(1).expand(-1, 8, -1, -1)
         self.pos_link_weight = (link_target == 1).type(torch.float32) * positive_pixels
         self.neg_link_weight = (link_target == 0).type(torch.float32) * positive_pixels
-        link_cross_entropies = torch.Tensor.new_empty(self.pos_link_weight, self.pos_link_weight.size())
+        link_cross_entropies = torch.Tensor.new_empty(
+            self.pos_link_weight, self.pos_link_weight.size()
+        )
         for i in range(8):
-            input = link_input[:, 2 * i:2 * (i + 1)]
+            input = link_input[:, 2 * i : 2 * (i + 1)]
             target = link_target[:, i]
-            link_cross_entropies[:, i] = F.cross_entropy(input, target, reduction='none')
-        sum_pos_link_weight = torch.sum(self.pos_link_weight.view(batch_size, -1), dim=1).clamp(min=1e-8)
-        sum_neg_link_weight = torch.sum(self.neg_link_weight.view(batch_size, -1), dim=1).clamp(min=1e-8)
+            link_cross_entropies[:, i] = F.cross_entropy(
+                input, target, reduction="none"
+            )
+        sum_pos_link_weight = torch.sum(
+            self.pos_link_weight.view(batch_size, -1), dim=1
+        ).clamp(min=1e-8)
+        sum_neg_link_weight = torch.sum(
+            self.neg_link_weight.view(batch_size, -1), dim=1
+        ).clamp(min=1e-8)
 
         loss_link_pos = link_cross_entropies * self.pos_link_weight
         loss_link_neg = link_cross_entropies * self.neg_link_weight
-        loss_link_pos = loss_link_pos.view(batch_size, -1).sum(dim=1) / sum_pos_link_weight
-        loss_link_neg = loss_link_neg.view(batch_size, -1).sum(dim=1) / sum_neg_link_weight
+        loss_link_pos = (
+            loss_link_pos.view(batch_size, -1).sum(dim=1) / sum_pos_link_weight
+        )
+        loss_link_neg = (
+            loss_link_neg.view(batch_size, -1).sum(dim=1) / sum_neg_link_weight
+        )
         self.link_loss = torch.mean(loss_link_pos) + torch.mean(loss_link_neg)
 
     def _set_link_accuracy(self, input, target, pixel_mask):
@@ -310,7 +399,7 @@ class PixelLinkLoss:
         pixel_mask = pixel_mask.byte()
         accuracies = []
         for i in range(8):
-            _, argmax = torch.max(input[:, 2*i:2*(i+1)], dim=1)
+            _, argmax = torch.max(input[:, 2 * i : 2 * (i + 1)], dim=1)
             match_count = torch.sum((argmax == target[:, i]) * pixel_mask).item()
             accuracies.append(match_count / elt_count)
         self.link_accuracy = accuracies
@@ -346,19 +435,35 @@ class FocalLoss(nn.Module):
 
 
 class PixelLinkFocalLoss(PixelLinkLoss):
-    def __init__(self, pixel_input, pixel_target, neg_pixel_masks, pixel_weight, link_input, link_target, r=3, l=2):
-        self._set_pixel_weight_and_loss(pixel_input, pixel_target, neg_pixel_masks, pixel_weight, r=r)
+    def __init__(
+        self,
+        pixel_input,
+        pixel_target,
+        neg_pixel_masks,
+        pixel_weight,
+        link_input,
+        link_target,
+        r=3,
+        l=2,
+    ):
+        self._set_pixel_weight_and_loss(
+            pixel_input, pixel_target, neg_pixel_masks, pixel_weight, r=r
+        )
         self._set_link_loss(link_input, link_target, pixel_target)
         self._set_pixel_accuracy(pixel_input, pixel_target, neg_pixel_masks)
         self._set_link_accuracy(link_input, link_target, pixel_target)
         self.loss = l * self.pixel_loss + self.link_loss
 
-    def _set_pixel_weight_and_loss(self, input, target, neg_pixel_mask, pixel_weight, r):
+    def _set_pixel_weight_and_loss(
+        self, input, target, neg_pixel_mask, pixel_weight, r
+    ):
         batch_size = input.size(0)
         self.pixel_cross_entropy = FocalLoss(alpha=0.25)(input, target)
         non_ignored = (target == 1) + (neg_pixel_mask == 1)
         self.pixel_cross_entropy *= non_ignored.float()
-        loss = torch.sum(self.pixel_cross_entropy, dim=1) / torch.sum(non_ignored, dim=1).float().clamp(min=1e-8)
+        loss = torch.sum(self.pixel_cross_entropy, dim=1) / torch.sum(
+            non_ignored, dim=1
+        ).float().clamp(min=1e-8)
         self.pixel_loss = torch.mean(loss)
 
     def _set_link_loss(self, input, target, positive_mask):
@@ -367,29 +472,50 @@ class PixelLinkFocalLoss(PixelLinkLoss):
         link_cross_entropies = torch.zeros_like(positive_mask)
         focal = FocalLoss(alpha=0.25)
         for i in range(8):
-            inp = input[:, 2 * i:2 * (i + 1)]
+            inp = input[:, 2 * i : 2 * (i + 1)]
             tar = target[:, i]
             link_cross_entropies[:, i] = focal(inp, tar)
         link_cross_entropies *= positive_mask
-        pixels_per_image = torch.sum(positive_mask.contiguous().view(batch_size, -1), dim=1)
-        loss = torch.sum(link_cross_entropies.view(batch_size, -1), dim=1) / pixels_per_image.float().clamp(min=1e-8)
+        pixels_per_image = torch.sum(
+            positive_mask.contiguous().view(batch_size, -1), dim=1
+        )
+        loss = torch.sum(
+            link_cross_entropies.view(batch_size, -1), dim=1
+        ) / pixels_per_image.float().clamp(min=1e-8)
         self.link_loss = torch.mean(loss)
 
 
 def test():
     from torch.utils.data import DataLoader
     from data import ICDAR15Dataset
+
     dataset = ICDAR15Dataset("./dataset/icdar2015/images", "./dataset/icdar2015/labels")
     loader = DataLoader(dataset, batch_size=1, shuffle=True)
-    images, pos_pixel_masks, neg_pixel_masks, pixel_weight, link_mask = next(iter(loader))
+    images, pos_pixel_masks, neg_pixel_masks, pixel_weight, link_mask = next(
+        iter(loader)
+    )
     pixellink = PixelLink(scale=4)
     pixel_input, link_input = pixellink(images)
-    loss_object = PixelLinkLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weight, link_input, link_mask)
+    loss_object = PixelLinkLoss(
+        pixel_input,
+        pos_pixel_masks,
+        neg_pixel_masks,
+        pixel_weight,
+        link_input,
+        link_mask,
+    )
     import matplotlib.pyplot as plt
     import cv2
     import numpy as np
+
     image = (images[0].transpose(0, 1).transpose(1, 2).numpy() * 255).astype(np.uint8)
-    weight = cv2.resize(cv2.applyColorMap((loss_object.pixel_weight[0].numpy() * 255).astype(np.uint8), cv2.COLORMAP_JET), (image.shape[1], image.shape[0]))
+    weight = cv2.resize(
+        cv2.applyColorMap(
+            (loss_object.pixel_weight[0].numpy() * 255).astype(np.uint8),
+            cv2.COLORMAP_JET,
+        ),
+        (image.shape[1], image.shape[0]),
+    )
     out = cv2.addWeighted(image, 0.5, weight, 0.5, 0)
     plt.imshow(out)
     plt.show()

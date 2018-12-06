@@ -13,7 +13,15 @@ import util
 
 
 class ICDAR15Dataset(data.Dataset):
-    def __init__(self, image_dir, labels_dir, classes, image_size=(512, 512), scale=4, training=True):
+    def __init__(
+        self,
+        image_dir,
+        labels_dir,
+        classes,
+        image_size=(512, 512),
+        scale=4,
+        training=True,
+    ):
         self.image_dir = Path(image_dir)
         self.labels_dir = Path(labels_dir)
         self.classes = classes
@@ -24,8 +32,9 @@ class ICDAR15Dataset(data.Dataset):
         self.image_size = image_size
         self.scale = scale
         self.training = training
-        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                              std=[0.229, 0.224, 0.225])
+        self.normalize = transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        )
 
     def _read_labels(self):
         labels = []
@@ -34,23 +43,22 @@ class ICDAR15Dataset(data.Dataset):
             filename = self.labels_dir / "gt_img_{}.txt".format(index)
             if not filename.exists():
                 break
-            label = {
-                "text": [],
-                "ignored": [],
-                "points": [],
-                "class": [],
-            }
+            label = {"text": [], "ignored": [], "points": [], "class": []}
             with open(str(filename), "r", encoding="utf-8_sig") as fp:
                 for line in fp:
                     fields = line.split(",")
                     label["class"].append(fields[0])
-                    points = [[int(fields[1 + 2 * i]), int(fields[2 * i + 2])] for i in range(0, 4)]
+                    points = [
+                        [int(fields[1 + 2 * i]), int(fields[2 * i + 2])]
+                        for i in range(0, 4)
+                    ]
                     label["points"].append(points)
                     text = ",".join(fields[9:]).strip()
                     label["text"].append(text)
                     label["ignored"].append(text == "###")
             labels.append(label)
             index += 1
+            break
         return labels
 
     def __len__(self):
@@ -66,10 +74,19 @@ class ICDAR15Dataset(data.Dataset):
             image, labels = self._train_transform(image, self.labels[index])
         else:
             image, labels = self._test_transform(image, self.labels[index])
-        pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask, class_mask = self._mask_and_pixel_weights(labels)
-        image = torch.Tensor(image.transpose(2, 0, 1)) / 255.
+        pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask, class_mask = self._mask_and_pixel_weights(
+            labels
+        )
+        image = torch.Tensor(image.transpose(2, 0, 1)) / 255.0
         image = self.normalize(image)
-        return image, pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask, class_mask
+        return (
+            image,
+            pos_pixel_mask,
+            neg_pixel_mask,
+            pixel_weight,
+            link_mask,
+            class_mask,
+        )
 
     def _train_transform(self, image, labels):
         if True or np.random.random() < 0.2:
@@ -85,13 +102,17 @@ class ICDAR15Dataset(data.Dataset):
         labels = self._filter_small_labels(labels)
         return image, labels
 
-    def _random_rotate_with_labels(self, image: np.ndarray, labels: dict) -> Tuple[np.ndarray, dict]:
+    def _random_rotate_with_labels(
+        self, image: np.ndarray, labels: dict
+    ) -> Tuple[np.ndarray, dict]:
         angle = np.random.randint(0, 4) * 90
         if angle == 0:
             return image, labels
         return self._rotate_with_labels(image, labels, angle)
 
-    def _rotate_with_labels(self, image: np.ndarray, labels: dict, angle: int) -> Tuple[np.ndarray, dict]:
+    def _rotate_with_labels(
+        self, image: np.ndarray, labels: dict, angle: int
+    ) -> Tuple[np.ndarray, dict]:
         new_labels = copy.deepcopy(labels)
         original_height, original_width, _ = image.shape
         image = util.rotate(image, angle)
@@ -109,11 +130,15 @@ class ICDAR15Dataset(data.Dataset):
         new_labels["points"] = new_points.tolist()
         return image, new_labels
 
-    def _random_transform_aspect_with_labels(self, image: np.ndarray, labels: dict) -> Tuple[np.ndarray, dict]:
+    def _random_transform_aspect_with_labels(
+        self, image: np.ndarray, labels: dict
+    ) -> Tuple[np.ndarray, dict]:
         ratio = 0.5 + np.random.random() * 1.5
         return self._transform_aspect_with_labels(image, labels, ratio)
 
-    def _transform_aspect_with_labels(self, image: np.ndarray, labels: dict, aspect_ratio: float) -> Tuple[np.ndarray, dict]:
+    def _transform_aspect_with_labels(
+        self, image: np.ndarray, labels: dict, aspect_ratio: float
+    ) -> Tuple[np.ndarray, dict]:
         new_labels = copy.deepcopy(labels)
         original_height, original_width, _ = image.shape
         image = util.transform_aspect_ratio(image, aspect_ratio)
@@ -126,7 +151,9 @@ class ICDAR15Dataset(data.Dataset):
         new_labels["points"] = new_points.tolist()
         return image, new_labels
 
-    def _random_crop_with_labels(self, image: np.ndarray, labels: dict) -> Tuple[np.ndarray, dict]:
+    def _random_crop_with_labels(
+        self, image: np.ndarray, labels: dict
+    ) -> Tuple[np.ndarray, dict]:
         new_labels = copy.deepcopy(labels)
         scale = 0.1 + np.random.random() * 0.9
         image, (offset_y, offset_x) = util.random_crop(image, scale)
@@ -185,7 +212,7 @@ class ICDAR15Dataset(data.Dataset):
 
         label_points = np.array(label["points"]) // self.scale
         pixel_mask_size = [size // self.scale for size in self.image_size]
-        link_mask_size = [8,] + pixel_mask_size
+        link_mask_size = [8] + pixel_mask_size
         class_mask_size = pixel_mask_size
         pixel_mask = np.zeros(pixel_mask_size, dtype=np.uint8)
         pixel_weight = np.zeros(pixel_mask_size, dtype=np.float32)
@@ -201,7 +228,7 @@ class ICDAR15Dataset(data.Dataset):
             if not label["ignored"][i]:
                 pixel_mask += pixel_mask_tmp
                 n_positive_bboxes += 1
-                cls = self.class_map[label["class"][i]]
+                cls = self.class_map[label["class"][i]] + 1
                 class_mask[np.where(pixel_mask_tmp)] = cls
 
         pos_pixel_mask = (pixel_mask == 1).astype(np.int)
@@ -221,12 +248,23 @@ class ICDAR15Dataset(data.Dataset):
 
             def in_bbox(y, x):
                 return bbox_positive_pixel_mask[y, x]
+
             for y, x in zip(*np.where(bbox_positive_pixel_mask)):
                 for n_index, (y_, x_) in enumerate(neighbors(y, x)):
-                    if is_valid_coor(y_, x_, self.image_size[0] // self.scale, self.image_size[1] // self.scale) and not in_bbox(y_, x_):
+                    if is_valid_coor(
+                        y_,
+                        x_,
+                        self.image_size[0] // self.scale,
+                        self.image_size[1] // self.scale,
+                    ) and not in_bbox(y_, x_):
                         link_mask[n_index][y, x] = 0
-        return torch.LongTensor(pos_pixel_mask), torch.LongTensor(neg_pixel_mask), torch.Tensor(pixel_weight), torch.LongTensor(link_mask), torch.LongTensor(class_mask)
-
+        return (
+            torch.LongTensor(pos_pixel_mask),
+            torch.LongTensor(neg_pixel_mask),
+            torch.Tensor(pixel_weight),
+            torch.LongTensor(link_mask),
+            torch.LongTensor(class_mask),
+        )
 
 
 def test():
@@ -234,10 +272,19 @@ def test():
     import os
 
     basedir = "./dataset"
-    dataset = ICDAR15Dataset(os.path.join(basedir, "images"), os.path.join(basedir, "labels"), scale=2, training=False)
+    dataset = ICDAR15Dataset(
+        os.path.join(basedir, "images"),
+        os.path.join(basedir, "labels"),
+        scale=2,
+        training=False,
+    )
     for i in range(10):
         image, pixel_mask, neg_pixel_mask, pixel_weight, link_mask = dataset[i]
-        image = (image.transpose(0, 1).transpose(1, 2).cpu().numpy() * 255).astype(np.uint8)
-        pixel_mask = np.expand_dims(cv2.resize(pixel_mask.cpu().numpy().astype(np.uint8), image.shape[:2]), -1)
+        image = (image.transpose(0, 1).transpose(1, 2).cpu().numpy() * 255).astype(
+            np.uint8
+        )
+        pixel_mask = np.expand_dims(
+            cv2.resize(pixel_mask.cpu().numpy().astype(np.uint8), image.shape[:2]), -1
+        )
         image = image * (pixel_mask * 0.8 + 0.2)
         cv2.imwrite("{}.png".format(i), image)
