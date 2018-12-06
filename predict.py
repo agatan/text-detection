@@ -41,7 +41,8 @@ def softmax_links(link_pred: torch.Tensor) -> torch.Tensor:
 
 
 def predict(pixellink: net.MobileNetV2PixelLink, image: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    pixel_preds, link_preds, _ = pixellink(image.unsqueeze(0))
+    # pixel_preds, link_preds, _ = pixellink(image.unsqueeze(0))
+    link_preds, pixel_preds = pixellink(image.unsqueeze(0))
     pixel_pred = pixel_preds.squeeze(0)
     link_pred = link_preds.squeeze(0)
     pixel_pred = pixel_pred.softmax(dim=0)
@@ -74,11 +75,16 @@ def main():
         shrink_ratio = 2
         pixel_pred = cv2.resize(pixel_pred, (image.shape[1] // shrink_ratio, image.shape[0] // shrink_ratio))
         link_pred = cv2.resize(link_pred, (image.shape[1] // shrink_ratio, image.shape[0] // shrink_ratio))
-        instance_map = postprocess.mask_to_instance_map(pixel_pred, link_pred, args.mask_thres, args.link_thres)
+        instance_map, class_map = postprocess.mask_to_instance_map(pixel_pred, link_pred, args.mask_thres, args.link_thres)
         instance_map = cv2.resize(instance_map, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
+        class_map = cv2.resize(class_map, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
         bounding_boxes = postprocess.instance_map_to_bboxes(instance_map)
         print("Inference + Postprocess: {:.4f}s".format(time.time() - start))
 
+        pixel_pred_tmp = np.zeros((pixel_pred.shape[0], pixel_pred.shape[1], 2), dtype=np.float32)
+        pixel_pred_tmp[:, :, 0] = pixel_pred[:, :, 0]
+        pixel_pred_tmp[:, :, 1] = np.sum(pixel_pred[:, :, 1:], axis=2)
+        pixel_pred = pixel_pred_tmp
         pixel_pred = cv2.resize(pixel_pred, (image.shape[1], image.shape[0]))
         link_pred = cv2.resize(link_pred, (image.shape[1], image.shape[0]))
         pixel_mask = np.argmax(pixel_pred, axis=2)
@@ -109,6 +115,16 @@ def main():
             colored_instance_map[y, x, :] = colors
     colored_instance_map = cv2.resize(colored_instance_map, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
     cv2.imwrite("instances.png", colored_instance_map)
+
+    # colorize class map.
+    colored_class_map = np.zeros(class_map.shape + (3,), np.uint8)
+    n_classes = np.max(class_map)
+    for n in range(1, n_classes + 1):
+        colors = (np.random.random(3) * 255).astype(np.uint8)
+        for y, x in zip(*np.where(class_map == n)):
+            colored_class_map[y, x, :] = colors
+    colored_class_map = cv2.resize(colored_class_map, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
+    cv2.imwrite("classes.png", colored_class_map)
 
     # draw boxes
     for box in bounding_boxes:

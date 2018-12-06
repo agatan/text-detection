@@ -69,13 +69,25 @@ def _link_pixels(pixel_mask: np.ndarray, link_mask: np.ndarray) -> np.ndarray:
 def mask_to_instance_map(pixel_mask: np.ndarray, link_mask: np.ndarray, mask_threshold: float = 0.5, link_threshold: float = 0.5) -> np.ndarray:
     mask_height, mask_width, _ = pixel_mask.shape
 
-    pixel_mask = pixel_mask[:, :, 1] > mask_threshold
+    pixel_mask = np.argmax(pixel_mask, axis=2)
+    max_class = np.max(pixel_mask)
     link_neighbors = np.zeros((mask_height, mask_width, 8), dtype=np.uint8)
     for i in range(8):
         neighbor = link_mask[:, :, 2 * i + 1] > link_threshold
         link_neighbors[:, :, i] = neighbor
-    link_neighbors = link_neighbors * np.expand_dims(pixel_mask, 2).astype(np.uint8)
-    return _link_pixels(pixel_mask, link_neighbors)
+    instance_map = np.zeros(pixel_mask.shape[:2], dtype=np.int32)
+    class_map = np.zeros(pixel_mask.shape[:2], dtype=np.int32)
+    sum_boxes = 0
+    for cls in range(1, max_class + 1):
+        class_mask = pixel_mask == cls
+        class_link_neighbors = link_neighbors * np.expand_dims(class_mask, 2).astype(np.uint8)
+        class_instances = _link_pixels(class_mask, class_link_neighbors)
+        num_boxes = np.max(class_instances)
+        class_map[class_instances != 0] = cls
+        class_instances[class_instances != 0] += sum_boxes
+        sum_boxes += num_boxes
+        instance_map += class_instances
+    return instance_map, class_map
 
 
 def instance_map_to_bboxes(instance_map: np.ndarray) -> List[List[np.ndarray]]:
