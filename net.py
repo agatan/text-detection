@@ -321,7 +321,7 @@ class PixelLinkLoss:
     def _set_pixel_accuracy(self, input, target, neg_pixel_mask):
         input = input.detach()
         _, argmax = torch.max(input, dim=1)
-        positive_count = torch.sum((argmax == 1) * (target == 1)).item()
+        positive_count = torch.sum((argmax == target) * (argmax != 0)).item()
         negative_count = torch.sum((argmax == 0) * (neg_pixel_mask == 1)).item()
         elt_count = (
             torch.sum(target == 1).item() + torch.sum(neg_pixel_mask == 1).item()
