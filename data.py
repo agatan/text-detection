@@ -58,7 +58,6 @@ class ICDAR15Dataset(data.Dataset):
                     label["ignored"].append(text == "###")
             labels.append(label)
             index += 1
-            break
         return labels
 
     def __len__(self):
@@ -91,8 +90,8 @@ class ICDAR15Dataset(data.Dataset):
     def _train_transform(self, image, labels):
         if True or np.random.random() < 0.2:
             image, labels = self._random_rotate_with_labels(image, labels)
-        # image, labels = self._random_transform_aspect_with_labels(image, labels)
-        # image, labels = self._random_crop_with_labels(image, labels)
+        image, labels = self._random_transform_aspect_with_labels(image, labels)
+        image, labels = self._random_crop_with_labels(image, labels)
         image, labels = self._resize_image_with_labels(image, labels)
         labels = self._filter_small_labels(labels)
         return image, labels
