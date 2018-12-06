@@ -72,7 +72,7 @@ def main():
         training=True,
     )
     dataloader = data.DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=True, num_workers=0
+        dataset, batch_size=args.batch_size, shuffle=True, num_workers=8
     )
     if args.test is not None:
         test_dataset = ICDAR15Dataset(
@@ -93,7 +93,7 @@ def main():
         # dataset = torch.utils.data.Subset(dataset, indices[n_test:])
         # print(len(dataset), len(test_dataset))
     test_dataloader = data.DataLoader(
-        test_dataset, batch_size=8, shuffle=False, num_workers=0
+        test_dataset, batch_size=8, shuffle=False, num_workers=8
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
