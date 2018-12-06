@@ -43,10 +43,27 @@ def main():
     np.random.seed(args.seed)
 
     image_size = (512, 512)
-    dataset = ICDAR15Dataset(os.path.join(args.train, "images"), os.path.join(args.train, "labels"), image_size=image_size, scale=args.scale, training=True)
-    dataloader = data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=8)
+    classes = [
+        'last_name_ja',
+        'first_name_ja',
+        'last_name_en',
+        'first_name_en',
+        'last_name_furigana',
+        'first_name_furigana',
+        'company',
+        'position',
+        'department',
+        'email',
+        'phone',
+        'mobile',
+        'fax',
+        'url',
+        'address',
+    ]
+    dataset = ICDAR15Dataset(os.path.join(args.train, "images"), os.path.join(args.train, "labels"), classes, image_size=image_size, scale=args.scale, training=True)
+    dataloader = data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
     if args.test is not None:
-        test_dataset = ICDAR15Dataset(os.path.join(args.test, "images"), os.path.join(args.test, "labels"), image_size=image_size, scale=args.scale, training=False)
+        test_dataset = ICDAR15Dataset(os.path.join(args.test, "images"), os.path.join(args.test, "labels"), classes, image_size=image_size, scale=args.scale, training=False)
     else:
         n_test = min(1000, (len(dataset) * 0.05))
         dataset, test_dataset = torch.utils.data.random_split(dataset, [len(dataset) - n_test, n_test])
@@ -54,7 +71,7 @@ def main():
         # test_dataset = torch.utils.data.Subset(dataset, indices[:n_test])
         # dataset = torch.utils.data.Subset(dataset, indices[n_test:])
         # print(len(dataset), len(test_dataset))
-    test_dataloader = data.DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=8)
+    test_dataloader = data.DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=0)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # pixellink = net.PixelLink(args.scale, pretrained=False).to(device)
@@ -69,7 +86,7 @@ def main():
     else:
         excitation_cls = {"cse": net.CSE, "sse": net.SSE, "scse": net.SCSE}.get(args.excitation, None)
         print(excitation_cls)
-        pixellink = net.MobileNetV2PixelLink(args.scale, excitation_cls=excitation_cls).to(device)
+        pixellink = net.MobileNetV2PixelLink(args.scale, len(classes), excitation_cls=excitation_cls).to(device)
     optimizer = torch.optim.Adam(pixellink.parameters(), lr=1e-3)
 
     def step_fn(training):
@@ -79,7 +96,7 @@ def main():
             else:
                 pixellink.eval()
             with torch.set_grad_enabled(training):
-                images, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_masks = batch
+                images, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_masks, class_masks = batch
                 if training:
                     optimizer.zero_grad()
                 images = images.to(device)
@@ -87,9 +104,10 @@ def main():
                 neg_pixel_masks = neg_pixel_masks.to(device)
                 pixel_weights = pixel_weights.to(device)
                 link_masks = link_masks.to(device)
-                pixel_input, link_input = pixellink(images)
-                loss_object = net.PixelLinkLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_input, link_masks)
-                # loss_object = net.PixelLinkFocalLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_input, link_masks)
+                class_masks = class_masks.to(device)
+                pixel_input, link_input, class_input = pixellink(images)
+                loss_object = net.PixelLinkLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_input, link_masks, class_input, class_masks)
+                # loss_object = net.PixelLinkFocalLoss(pixel_input, pos_pixel_masks, neg_pixel_masks, pixel_weights, link_input, link_masks, class_masks)
                 if training:
                     loss_object.loss.backward()
                     optimizer.step()
@@ -97,9 +115,11 @@ def main():
                     "loss": loss_object.loss.item(),
                     "loss/pixel": loss_object.pixel_loss.item(),
                     "loss/link": loss_object.link_loss.item(),
+                    "loss/class": loss_object.class_loss.item(),
                     "accuracy/pixel": loss_object.pixel_accuracy,
                     "accuracy/link": np.mean(loss_object.link_accuracy),
                     "accuracy/positive_pixel": loss_object.positive_pixel_accuracy,
+                    "accuracy/class": loss_object.class_accuracy,
                 }
         return fn
 
@@ -130,7 +150,10 @@ def main():
                                 to_save={"net": pixellink})
     timer = Timer(average=True)
 
-    monitoring_metrics = ["loss", "loss/pixel", "loss/link", "accuracy/pixel", "accuracy/link", "accuracy/positive_pixel"]
+    monitoring_metrics = [
+        "loss", "loss/pixel", "loss/link", "loss/class",
+        "accuracy/pixel", "accuracy/link", "accuracy/positive_pixel", "accuracy/class",
+    ]
     for metric in monitoring_metrics:
         def output_transform(m):
             def fn(x):

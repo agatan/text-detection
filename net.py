@@ -5,10 +5,11 @@ import torchvision
 
 
 class PixelLink(nn.Module):
-    def __init__(self, scale, pretrained=False):
+    def __init__(self, scale, n_classes, pretrained=False):
         super(PixelLink, self).__init__()
         assert scale in [2, 4]
         self.scale = scale
+        self.n_classes = n_classes
         vgg16 = torchvision.models.vgg16(pretrained=pretrained)
         self.block1 = nn.Sequential(*vgg16.features[:9])
         self.block2 = nn.Sequential(*vgg16.features[9:16])
@@ -22,7 +23,7 @@ class PixelLink(nn.Module):
             nn.ReLU(inplace=True),
         )
 
-        out_channels = 2 + 8 * 2  # text/non-text, 8 neighbors link
+        out_channels = 2 + 8 * 2 + self.n_classes  # text/non-text, 8 neighbors link
         self.out_conv1 = nn.Conv2d(512, out_channels, kernel_size=1)
         self.out_conv2 = nn.Conv2d(512, out_channels, kernel_size=1)
         self.out_conv3 = nn.Conv2d(256, out_channels, kernel_size=1)
@@ -45,7 +46,7 @@ class PixelLink(nn.Module):
             o = o2
         o = self.last_conv(o)
         # Returns text/non-text, 8 neighbors logits
-        return o[:, :2, :, :], o[:, 2:, :, :]
+        return o[:, :2, :, :], o[:, 2:-self.n_classes, :, :], o[:, -self.n_classes:, :, :]
 
 
 def _conv_bn(in_channels, out_channels, stride):
@@ -140,10 +141,11 @@ class SCSE(nn.Module):
 
 
 class MobileNetV2PixelLink(nn.Module):
-    def __init__(self, scale, excitation_cls=None):
+    def __init__(self, scale, n_classes, excitation_cls=None):
         super(MobileNetV2PixelLink, self).__init__()
         assert scale in [2, 4]
         self.scale = scale
+        self.n_classes = n_classes
         first_channels = 32
         inverted_residual_config = [
             # t (expand ratio), channels, n (layers), stride
@@ -175,7 +177,7 @@ class MobileNetV2PixelLink(nn.Module):
         self.block3 = self._layers_with_excitation_as_need(features[3:4], 32)
         self.block4 = self._layers_with_excitation_as_need(features[4:6], 96)
         self.block5 = self._layers_with_excitation_as_need(features[6:], 1280)
-        out_channels = 2 + 8 * 2  # text/non-text, 8 neighbors
+        out_channels = 2 + 8 * 2 + self.n_classes # text/non-text, 8 neighbors, classes
         self.out_conv1 = self._out_conv_with_excitation_as_need(1280, out_channels)
         self.out_conv2 = self._out_conv_with_excitation_as_need(96, out_channels)
         self.out_conv3 = self._out_conv_with_excitation_as_need(32, out_channels)
@@ -211,15 +213,17 @@ class MobileNetV2PixelLink(nn.Module):
             o1 = o2
         o = self.final_conv(o1)
         # Returns text/non-text, 8 neighbors logits
-        return o[:, :2, :, :], o[:, 2:, :, :]
+        return o[:, :2, :, :], o[:, 2:-self.n_classes, :, :], o[:, -self.n_classes:, :, :]
 
 class PixelLinkLoss:
-    def __init__(self, pixel_input, pixel_target, neg_pixel_masks, pixel_weight, link_input, link_target, r=3, l=2):
+    def __init__(self, pixel_input, pixel_target, neg_pixel_masks, pixel_weight, link_input, link_target, class_input, class_target, r=3, l=2):
         self._set_pixel_weight_and_loss(pixel_input, pixel_target, neg_pixel_masks, pixel_weight, r=r)
+        self._set_class_loss(class_input, class_target)
+        self._set_class_accuracy(class_input, class_target, pixel_target)
         self._set_link_loss(link_input, link_target)
         self._set_pixel_accuracy(pixel_input, pixel_target, neg_pixel_masks)
         self._set_link_accuracy(link_input, link_target, pixel_target)
-        self.loss = l * self.pixel_loss + self.link_loss
+        self.loss = l * self.pixel_loss + self.link_loss + self.class_loss
 
     def _set_pixel_weight_and_loss(self, input, target, neg_pixel_masks, pixel_weight, r):
         batch_size = input.size(0)
@@ -259,6 +263,24 @@ class PixelLinkLoss:
             self.positive_pixel_accuracy = positive_count / float(torch.sum(target == 1).item())
         else:
             self.positive_pixel_accuracy = 0.0
+
+    def _set_class_loss(self, class_input, class_target):
+        class_cross_entropies = F.cross_entropy(class_input, class_target, reduction='none')
+        positive_count = (self.pos_pixel_weight != 0).sum().float().item()
+        if positive_count == 0:
+            self.class_loss = 0
+        else:
+            self.class_loss = torch.sum(class_cross_entropies * self.pos_pixel_weight) / positive_count
+
+    def _set_class_accuracy(self, class_input, class_target, pixel_mask):
+        class_input = class_input.detach()
+        elt_count = float(pixel_mask.sum().item())
+        if elt_count == 0:
+            self.class_accuracy = 0.0
+            return
+        pixel_mask = pixel_mask.byte()
+        _, argmax = torch.max(class_input, dim=1)
+        self.class_accuracy = torch.sum((argmax == class_target) * pixel_mask).item() / elt_count
 
     def _set_link_loss(self, link_input, link_target):
         batch_size = link_input.size(0)

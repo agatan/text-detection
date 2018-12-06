@@ -13,9 +13,13 @@ import util
 
 
 class ICDAR15Dataset(data.Dataset):
-    def __init__(self, image_dir, labels_dir, image_size=(512, 512), scale=4, training=True):
+    def __init__(self, image_dir, labels_dir, classes, image_size=(512, 512), scale=4, training=True):
         self.image_dir = Path(image_dir)
         self.labels_dir = Path(labels_dir)
+        self.classes = classes
+        self.class_map = {}
+        for i, cls in enumerate(classes):
+            self.class_map[cls] = i
         self.labels = self._read_labels()
         self.image_size = image_size
         self.scale = scale
@@ -34,13 +38,15 @@ class ICDAR15Dataset(data.Dataset):
                 "text": [],
                 "ignored": [],
                 "points": [],
+                "class": [],
             }
             with open(str(filename), "r", encoding="utf-8_sig") as fp:
                 for line in fp:
                     fields = line.split(",")
-                    points = [[int(fields[2 * i]), int(fields[2 * i + 1])] for i in range(0, 4)]
+                    label["class"].append(fields[0])
+                    points = [[int(fields[1 + 2 * i]), int(fields[2 * i + 2])] for i in range(0, 4)]
                     label["points"].append(points)
-                    text = fields[8].strip()
+                    text = ",".join(fields[9:]).strip()
                     label["text"].append(text)
                     label["ignored"].append(text == "###")
             labels.append(label)
@@ -60,16 +66,16 @@ class ICDAR15Dataset(data.Dataset):
             image, labels = self._train_transform(image, self.labels[index])
         else:
             image, labels = self._test_transform(image, self.labels[index])
-        pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask = self._mask_and_pixel_weights(labels)
+        pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask, class_mask = self._mask_and_pixel_weights(labels)
         image = torch.Tensor(image.transpose(2, 0, 1)) / 255.
         image = self.normalize(image)
-        return image, pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask
+        return image, pos_pixel_mask, neg_pixel_mask, pixel_weight, link_mask, class_mask
 
     def _train_transform(self, image, labels):
         if True or np.random.random() < 0.2:
             image, labels = self._random_rotate_with_labels(image, labels)
-        image, labels = self._random_transform_aspect_with_labels(image, labels)
-        image, labels = self._random_crop_with_labels(image, labels)
+        # image, labels = self._random_transform_aspect_with_labels(image, labels)
+        # image, labels = self._random_crop_with_labels(image, labels)
         image, labels = self._resize_image_with_labels(image, labels)
         labels = self._filter_small_labels(labels)
         return image, labels
@@ -180,9 +186,11 @@ class ICDAR15Dataset(data.Dataset):
         label_points = np.array(label["points"]) // self.scale
         pixel_mask_size = [size // self.scale for size in self.image_size]
         link_mask_size = [8,] + pixel_mask_size
+        class_mask_size = pixel_mask_size
         pixel_mask = np.zeros(pixel_mask_size, dtype=np.uint8)
         pixel_weight = np.zeros(pixel_mask_size, dtype=np.float32)
         link_mask = np.zeros(link_mask_size, dtype=np.uint8)
+        class_mask = np.zeros(class_mask_size, dtype=np.int32)
 
         bbox_masks = []
         n_positive_bboxes = 0
@@ -193,6 +201,8 @@ class ICDAR15Dataset(data.Dataset):
             if not label["ignored"][i]:
                 pixel_mask += pixel_mask_tmp
                 n_positive_bboxes += 1
+                cls = self.class_map[label["class"][i]]
+                class_mask[np.where(pixel_mask_tmp)] = cls
 
         pos_pixel_mask = (pixel_mask == 1).astype(np.int)
         n_pos_pixels = np.sum(pos_pixel_mask)
@@ -215,7 +225,7 @@ class ICDAR15Dataset(data.Dataset):
                 for n_index, (y_, x_) in enumerate(neighbors(y, x)):
                     if is_valid_coor(y_, x_, self.image_size[0] // self.scale, self.image_size[1] // self.scale) and not in_bbox(y_, x_):
                         link_mask[n_index][y, x] = 0
-        return torch.LongTensor(pos_pixel_mask), torch.LongTensor(neg_pixel_mask), torch.Tensor(pixel_weight), torch.LongTensor(link_mask)
+        return torch.LongTensor(pos_pixel_mask), torch.LongTensor(neg_pixel_mask), torch.Tensor(pixel_weight), torch.LongTensor(link_mask), torch.LongTensor(class_mask)
 
 
 
