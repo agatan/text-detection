@@ -2,6 +2,7 @@ from typing import Union, Tuple
 from pathlib import Path
 import copy
 
+import torch
 import torch.utils.data as data
 import cv2
 import numpy as np
@@ -54,7 +55,6 @@ class Dataset(data.Dataset):
                     label["ignored"].append(text == "###")
             labels.append(label)
             index += 1
-            if index == 100 : break
         return labels
 
     def __len__(self):
@@ -68,8 +68,9 @@ class Dataset(data.Dataset):
         image = self._read_image(index)
         label = self.labels[index]
         image, label = self._resize_image_with_labels(image, label)
+        image = np.transpose(image, (2, 0, 1)).astype(np.float) / 255.
         mask_map, distance_map = self._mask_and_distances(label)
-        return image, mask_map, distance_map
+        return torch.FloatTensor(image), torch.LongTensor(mask_map), torch.FloatTensor(distance_map)
 
     def _resize_image_with_labels(self, image, labels):
         labels = copy.deepcopy(labels)
@@ -84,9 +85,7 @@ class Dataset(data.Dataset):
 
     def _mask_and_distances(self, label):
         map_size = (self.image_size[0] // self.scale, self.image_size[1] // self.scale)
-        mask_map = np.zeros((2,) + map_size, np.uint8)
-        # default: non text area
-        mask_map[0, :, :] = 1
+        mask_map = np.zeros(map_size, np.uint8)
         # top, left, bottom, right
         distance_map = np.zeros((4,) + map_size, np.float)
         for points in label["points"]:
@@ -100,8 +99,7 @@ class Dataset(data.Dataset):
             y_r = (ymax - ymin) * 0.3
             y_from = round((ymin + y_r) / self.scale)
             y_to = round((ymax - y_r) / self.scale)
-            mask_map[0, y_from:y_to + 1, x_from:x_to + 1] = 0
-            mask_map[1, y_from:y_to + 1, x_from:x_to + 1] = 1
+            mask_map[y_from:y_to + 1, x_from:x_to + 1] = 1
             # top
             distance_map[0, y_from:y_to + 1, x_from:x_to + 1] = np.expand_dims(np.arange(y_from, y_to + 1).astype(np.float32) - ymin / self.scale, axis=-1)
             # bottom
