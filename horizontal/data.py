@@ -1,36 +1,27 @@
 from typing import Union, Tuple
 from pathlib import Path
 import copy
+import math
 
 import torch
 import torch.utils.data as data
 import cv2
 import numpy as np
 
-
-def _compute_min_rect_and_angle(contours: np.ndarray) -> Tuple[np.ndarray, float]:
-    """
-    Returns:
-        min_rect_contours: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
-        angle: radian
-    """
-    print(contours)
-    print(cv2.minAreaRect(contours))
-    (left, top), (width, height), angle = cv2.minAreaRect(contours)
-    box = cv2.boxPoints(((left, top), (width, height), angle))
-    print(box)
-    return box
+import util
 
 
 class Dataset(data.Dataset):
     def __init__(self, image_dir: Union[str, Path], label_dir: Union[str, Path],
                  image_size: Tuple[int, int] = (512, 512),
-                 scale: int = 4):
+                 scale: int = 4,
+                 training: bool = False):
         self.image_dir = Path(image_dir)
         self.label_dir = Path(label_dir)
         self.labels = self._read_labels()
         self.image_size = image_size
         self.scale = scale
+        self.training = training
 
     def _read_labels(self):
         labels = []
@@ -67,10 +58,57 @@ class Dataset(data.Dataset):
     def __getitem__(self, index: int):
         image = self._read_image(index)
         label = self.labels[index]
-        image, label = self._resize_image_with_labels(image, label)
+        if self.training:
+            image, label = self._train_transform(image, label)
+        else:
+            image, label = self._test_transform(image, label)
         image = np.transpose(image, (2, 0, 1)).astype(np.float) / 255.
         mask_map, distance_map = self._mask_and_distances(label)
         return torch.FloatTensor(image), torch.LongTensor(mask_map), torch.FloatTensor(distance_map)
+
+    def _train_transform(self, image, label):
+        image, label = self._random_rotate_with_labels(image, label)
+        image, label = self._rotate_image_to_wide_with_label(image, label)
+        image, label = self._resize_image_with_labels(image, label)
+        cv2.imwrite("out.png", image)
+        label = self._filter_small_labels(label)
+        return image, label
+
+    def _test_transform(self, image, label):
+        image, label = self._resize_image_with_labels(image, label)
+        image, label = self._rotate_image_to_wide_with_label(image, label)
+        label = self._filter_small_labels(label)
+        return image, label
+
+    def _rotate_image_to_wide_with_label(self, image: np.ndarray, label: dict) -> Tuple[np.ndarray, dict]:
+        height, width, _ = image.shape
+        if height < width:
+            return image, label
+        return self._rotate_with_labels(image, label, 90)
+
+    def _random_rotate_with_labels(self, image: np.ndarray, labels: dict) -> Tuple[np.ndarray, dict]:
+        angle = np.random.randint(0, 4) * 90
+        if angle == 0:
+            return image, labels
+        return self._rotate_with_labels(image, labels, angle)
+
+    def _rotate_with_labels(self, image: np.ndarray, labels: dict, angle: int) -> Tuple[np.ndarray, dict]:
+        new_labels = copy.deepcopy(labels)
+        original_height, original_width, _ = image.shape
+        image = util.rotate(image, angle)
+        points = np.array(labels["points"])
+        new_points = np.array(new_labels["points"])
+        if angle == 90:
+            new_points[:, :, 0] = original_height - points[:, :, 1]
+            new_points[:, :, 1] = points[:, :, 0]
+        elif angle == 180:
+            new_points[:, :, 0] = original_width - points[:, :, 0]
+            new_points[:, :, 1] = original_height - points[:, :, 1]
+        elif angle == 270:
+            new_points[:, :, 0] = points[:, :, 1]
+            new_points[:, :, 1] = original_width - points[:, :, 0]
+        new_labels["points"] = new_points.tolist()
+        return image, new_labels
 
     def _resize_image_with_labels(self, image, labels):
         labels = copy.deepcopy(labels)
@@ -82,6 +120,19 @@ class Dataset(data.Dataset):
         points[:, :, 1] = points[:, :, 1] * height / original_height
         labels["points"] = points.tolist()
         return resized_image, labels
+
+    def _filter_small_labels(self, labels: dict) -> dict:
+        new_labels = copy.deepcopy(labels)
+        for i in range(len(labels["points"])):
+            points = new_labels["points"][i]
+            for j in range(len(points)):
+                y1, x1 = points[j]
+                y2, x2 = points[(j + 1) % 4]
+                distance = math.sqrt((y2 - y1) ** 2 + (x2 - x1) ** 2)
+                if distance < 10:
+                    new_labels["ignored"][i] = True
+                    break
+        return new_labels
 
     def _mask_and_distances(self, label):
         map_size = (self.image_size[0] // self.scale, self.image_size[1] // self.scale)

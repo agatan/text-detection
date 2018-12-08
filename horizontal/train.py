@@ -42,11 +42,11 @@ def main():
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    image_size = (512, 512)
-    dataset = Dataset(os.path.join(args.train, "images"), os.path.join(args.train, "labels"), image_size=image_size, scale=args.scale)
+    image_size = (384, 640)
+    dataset = Dataset(os.path.join(args.train, "images"), os.path.join(args.train, "labels"), image_size=image_size, scale=args.scale, training=True)
     dataloader = data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=8)
     if args.test is not None:
-        test_dataset = Dataset(os.path.join(args.test, "images"), os.path.join(args.test, "labels"), image_size=image_size, scale=args.scale)
+        test_dataset = Dataset(os.path.join(args.test, "images"), os.path.join(args.test, "labels"), image_size=image_size, scale=args.scale, training=False)
     else:
         n_test = min(1000, (len(dataset) * 0.05))
         indices = np.arange(len(dataset))
