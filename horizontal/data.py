@@ -70,7 +70,6 @@ class Dataset(data.Dataset):
         image, label = self._random_rotate_with_labels(image, label)
         image, label = self._rotate_image_to_wide_with_label(image, label)
         image, label = self._resize_image_with_labels(image, label)
-        cv2.imwrite("out.png", image)
         label = self._filter_small_labels(label)
         return image, label
 
