@@ -85,6 +85,7 @@ class Dataset(data.Dataset):
 
     def _mask_and_distances(self, label):
         map_size = (self.image_size[0] // self.scale, self.image_size[1] // self.scale)
+        height, width = map_size
         mask_map = np.zeros(map_size, np.uint8)
         # top, left, bottom, right
         distance_map = np.zeros((4,) + map_size, np.float)
@@ -94,11 +95,15 @@ class Dataset(data.Dataset):
             xmax = max((p[0] for p in points))
             ymax = max((p[1] for p in points))
             x_r = (xmax - xmin) * 0.3
-            x_from = round((xmin + x_r) / self.scale)
-            x_to = round((xmax - x_r) / self.scale)
+            x_from = int(round((xmin + x_r) / self.scale))
+            x_to = int(round((xmax - x_r) / self.scale))
+            x_to = min(x_to, width - 1)
             y_r = (ymax - ymin) * 0.3
-            y_from = round((ymin + y_r) / self.scale)
-            y_to = round((ymax - y_r) / self.scale)
+            y_from = int(round((ymin + y_r) / self.scale))
+            y_to = int(round((ymax - y_r) / self.scale))
+            y_to = min(y_to, height - 1)
+            if x_from == x_to or y_from == y_to:
+                continue
             mask_map[y_from:y_to + 1, x_from:x_to + 1] = 1
             # top
             distance_map[0, y_from:y_to + 1, x_from:x_to + 1] = np.expand_dims(np.arange(y_from, y_to + 1).astype(np.float32) - ymin / self.scale, axis=-1)
