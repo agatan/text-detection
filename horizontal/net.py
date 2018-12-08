@@ -61,7 +61,7 @@ class CSE(nn.Module):
         super(CSE, self).__init__()
         self.excitation = nn.Sequential(
             nn.Linear(channels, channels // 16),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             nn.Linear(channels // 16, channels),
             nn.Sigmoid(),
         )
@@ -171,4 +171,62 @@ class Net(nn.Module):
             o1 = o2
         o = self.final_conv(o1)
         # Returns text/non-text, distances
-        return o[:, :2, :, :], o[:, 2:, :, :]
+        return o[:, :2, :, :], F.relu(o[:, 2:, :, :], inplace=True)
+
+
+class FocalLoss(nn.Module):
+    def __init__(self, gamma=2, alpha=None):
+        super(FocalLoss, self).__init__()
+        self.gamma = gamma
+        if isinstance(alpha, float):
+            self.alpha = torch.Tensor([alpha, 1 - alpha])
+        else:
+            self.alpha = alpha
+
+    def forward(self, input, target):
+        if input.dim() > 2:
+            input = input.view(input.size(0), input.size(1), -1)
+            input = input.transpose(1, 2)
+            input = input.contiguous().view(-1, input.size(2))
+        original_size = target.size()
+        target = target.contiguous().view(-1, 1)
+        logpt = F.log_softmax(input, dim=1)
+        logpt = logpt.gather(dim=1, index=target).view(-1)
+        pt = logpt.detach().exp()
+
+        if self.alpha is not None:
+            self.alpha = self.alpha.type(logpt.dtype).to(logpt.device)
+            at = self.alpha.gather(dim=0, index=target.detach().view(-1))
+            logpt = logpt * at
+
+        loss = -1 * (1 - pt) ** self.gamma * logpt
+        return loss.view(original_size[0], original_size[1], original_size[2])
+
+
+class Loss:
+    def __init__(
+        self,
+        mask_pred,
+        distance_pred,
+        mask_target,
+        distance_target,
+    ):
+        self._set_mask_loss(mask_pred, mask_target)
+        self._set_distance_loss(distance_pred, distance_target, mask_target)
+        self.loss = self.mask_loss + self.distance_loss
+
+    def _set_mask_loss(self, mask_pred, mask_target):
+        self.mask_loss = FocalLoss()(mask_pred, mask_target).mean()
+
+    def _set_distance_loss(self, pred, target, mask_target):
+        pred = pred.clamp(min=0)
+        h_in = torch.min(pred[:, 0], target[:, 0]) + torch.min(pred[:, 2], target[:, 2])
+        w_in = torch.min(pred[:, 1], target[:, 1]) + torch.min(pred[:, 3], target[:, 3])
+        in_areas = w_in * h_in
+        target_areas = (target[:, 0] + target[:, 2]) * (target[:, 1] + target[:, 3])
+        pred_areas = (pred[:, 0] + pred[:, 2]) * (pred[:, 1] + pred[:, 3])
+        union_areas = target_areas + pred_areas - in_areas
+        ious = in_areas / union_areas
+        log_ious = ious.clamp(min=1e-8).log()
+        loss = -log_ious * (mask_target == 1).float()
+        self.distance_loss = loss.sum() / (mask_target == 1).sum().float().item()
