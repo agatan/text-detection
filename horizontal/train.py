@@ -76,23 +76,22 @@ def main():
             else:
                 model.eval()
             with torch.set_grad_enabled(training):
-                with torch.autograd.detect_anomaly():
-                    images, mask_map, distance_map = batch
-                    if training:
-                        optimizer.zero_grad()
-                    images = images.to(device)
-                    mask_map = mask_map.to(device)
-                    distance_map = distance_map.to(device)
-                    mask_pred, distance_pred = model(images)
-                    loss_object = net.Loss(mask_pred, distance_pred, mask_map, distance_map)
-                    if training:
-                        loss_object.loss.backward()
-                        optimizer.step()
-                    return {
-                        "loss": loss_object.loss.item(),
-                        "loss/mask": loss_object.mask_loss.item(),
-                        "loss/distance": loss_object.distance_loss.item(),
-                    }
+                images, mask_map, distance_map = batch
+                if training:
+                    optimizer.zero_grad()
+                images = images.to(device)
+                mask_map = mask_map.to(device)
+                distance_map = distance_map.to(device)
+                mask_pred, distance_pred = model(images)
+                loss_object = net.Loss(mask_pred, distance_pred, mask_map, distance_map)
+                if training:
+                    loss_object.loss.backward()
+                    optimizer.step()
+                return {
+                    "loss": loss_object.loss.item(),
+                    "loss/mask": loss_object.mask_loss.item(),
+                    "loss/distance": loss_object.distance_loss.item(),
+                }
         return fn
 
     dummy = torch.randn(1, 3, image_size[0], image_size[1], dtype=torch.float).to(device)

@@ -226,7 +226,7 @@ class Loss:
         target_areas = (target[:, 0] + target[:, 2]) * (target[:, 1] + target[:, 3])
         pred_areas = (pred[:, 0] + pred[:, 2]) * (pred[:, 1] + pred[:, 3])
         union_areas = target_areas + pred_areas - in_areas
-        ious = in_areas / union_areas
+        ious = in_areas / union_areas.clamp(min=1e-8)
         log_ious = ious.clamp(min=1e-8).log()
         loss = -log_ious * (mask_target == 1).float()
         self.distance_loss = loss.sum() / (mask_target == 1).sum().float().item()
