@@ -105,7 +105,7 @@ def main():
         print("Inference + NMS: ", time.time() - start, "[s]")
         for k in keep:
             top, left, bottom, right = boxes[:, k]
-            cv2.rectangle(image, (left, top), (right, bottom), (255, 0, 0), thickness=3)
+            cv2.rectangle(image, (left, top), (right, bottom), (255, 0, 0), thickness=1)
         cv2.imwrite("out.png", image)
 
 
