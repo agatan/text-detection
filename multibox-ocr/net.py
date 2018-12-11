@@ -257,10 +257,53 @@ class BidirectionalBoxPool(nn.Module):
         return torch.stack([yy, xx], -1), height
 
 
-class Net(nn.Module):
-    def __init__(self, n_vocab: int, backbone: nn.Module) -> None:
+class RecognitionModule(nn.Module):
+    def __init__(self, n_vocab: int, channels: int):
         super().__init__()
-        self.backbone = backbone
+        self.n_vocab = n_vocab
+        self.layer = nn.Sequential(
+            nn.Conv2d(channels, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1)),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1)),
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1)),
+            nn.Conv2d(256, self.n_vocab, kernel_size=1),
+        )
+
+    def forward(self, x: torch.Tensor):
+        """
+        Args:
+            x: (N, C, H, W)
+        Returns:
+            tensor: (N, n_vocab, W)
+        """
+        return self.layer(x)
+
+
+class Net(nn.Module):
+    def __init__(self, n_vocab: int) -> None:
+        super().__init__()
+        self.feature_map_scale = 4
+        self.backbone = Backbone(scale=self.feature_map_scale, out_channels=24)
+        self.pool_height = 8
+        self.box_pool = BidirectionalBoxPool(self.pool_height)
+        self.recognition = RecognitionModule(n_vocab, 24)
         self.n_vocab = n_vocab
 
     def forward(self, images: torch.Tensor, boxes: torch.Tensor):
@@ -269,6 +312,13 @@ class Net(nn.Module):
             images: (N, C, H, W)
             boxes: (N, #boxes,
         """
+        feature_map = self.backbone(images)
+        box_feature_map, widths = self.box_pool(feature_map, boxes / self.feature_map_scale)
+        batch_size, max_box, _, channels, height, width = box_feature_map.size()
+        flatten_feature = box_feature_map.view(-1, channels, height, width)
+        flatten_recognition = self.recognition(flatten_feature)
+        recognition = flatten_recognition.view(batch_size, max_box, 2, -1, width)
+        return recognition, widths
 
 
 def test():
@@ -276,6 +326,8 @@ def test():
     charset = data.CharSet(list("0123456789"))
     dataset = data.Dataset("./dataset/cards-all/images", "./dataset/cards-all/labels", charset=charset, image_size=(384, 640))
     image, boxes, text_target, text_lengths = dataset[4]
+    recognition, widths = Net(12)(image.unsqueeze(0), boxes.unsqueeze(0))
+    print(recognition.size(), widths.size())
     features, widths = BidirectionalBoxPool(pool_height=64)(image.unsqueeze(0), boxes.unsqueeze(0))
     import torchvision.utils as utils
     utils.save_image(features.view(-1, 3, 64, features.size(5)), "out.png", normalize=True)
