@@ -33,7 +33,7 @@ class Dataset(data.Dataset):
             filename = self.label_dir / "gt_img_{}.txt".format(index)
             if not filename.exists():
                 break
-            label = {
+            label: dict = {
                 "text": [],
                 "ignored": [],
                 "points": [],
@@ -66,8 +66,8 @@ class Dataset(data.Dataset):
         else:
             image, label = self._test_transform(image, label)
         image = np.transpose(image, (2, 0, 1)).astype(np.float) / 255.
-        grids = self._generate_grids(label)
-        return torch.FloatTensor(image), torch.FloatTensor(grids)
+        grids, widths = self._generate_grids(label)
+        return torch.FloatTensor(image), grids, widths
 
     def _train_transform(self, image, label):
         image, label = self._random_rotate_with_labels(image, label)
@@ -136,7 +136,7 @@ class Dataset(data.Dataset):
                     break
         return new_labels
 
-    def _generate_grids(self, label):
+    def _generate_grids(self, label: dict) -> Tuple[torch.Tensor, torch.Tensor]:
         n_boxes = len(label["text"])
         w_per_h = []
         boxes = []
@@ -155,13 +155,15 @@ class Dataset(data.Dataset):
         max_width = int(math.ceil(max(w_per_h) * self.pool_height))
         grids_size = (n_boxes, 2, self.pool_height, max_width, 2)
         grids = torch.full(grids_size, -2.0)
+        widths = torch.empty(n_boxes, dtype=torch.int32)
         image_height, image_width = self.image_size
         for box_id, box in enumerate(boxes[:1]):
             xmin, ymin, xmax, ymax = box
             grid, width = self._make_grid(xmin, ymin, xmax, ymax)
             grids[box_id, 0, :, :width, :] = grid
             grids[box_id, 1, :, :width, :] = grid.flip((0, 1))
-        return grids
+            widths[box_id] = width
+        return grids, widths
 
     def _make_grid(self, xmin, ymin, xmax, ymax):
         if xmax - xmin > ymax - ymin:
@@ -198,7 +200,7 @@ class Dataset(data.Dataset):
 
 def test():
     dataset = Dataset("./dataset/cards-all/images", "./dataset/cards-all/labels", image_size=(384, 640), pool_height=32)
-    image, grids = dataset[4]
+    image, grids, widths = dataset[4]
     import torch.nn.functional as F
     sample = F.grid_sample(torch.stack([image], 0), grids[:1, 1])
     import torchvision.utils as utils
