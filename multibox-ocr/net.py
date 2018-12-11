@@ -274,7 +274,7 @@ class Net(nn.Module):
 def test():
     import data
     charset = data.CharSet(list("0123456789"))
-    dataset = data.Dataset("./dataset/cards-all/images", "./dataset/cards-all/labels", charset=charset, image_size=(384, 640), pool_height=32)
+    dataset = data.Dataset("./dataset/cards-all/images", "./dataset/cards-all/labels", charset=charset, image_size=(384, 640))
     image, boxes, text_target, text_lengths = dataset[4]
     features, widths = BidirectionalBoxPool(pool_height=64)(image.unsqueeze(0), boxes.unsqueeze(0))
     import torchvision.utils as utils

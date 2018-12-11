@@ -35,7 +35,6 @@ class Dataset(data.Dataset):
                  charset: CharSet,
                  image_size: Tuple[int, int] = (512, 512),
                  scale: int = 4,
-                 pool_height: int = 8,
                  training: bool = False):
         self.image_dir = Path(image_dir)
         self.label_dir = Path(label_dir)
@@ -44,7 +43,6 @@ class Dataset(data.Dataset):
         # H, W
         self.image_size = image_size
         self.scale = scale
-        self.pool_height = pool_height
         self.training = training
 
     def _read_labels(self):
