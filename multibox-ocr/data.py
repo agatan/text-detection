@@ -19,6 +19,9 @@ class CharSet:
         for i, c in enumerate(self._idx2char):
             self._char2idx[c] = i
 
+    def __len__(self) -> int:
+        return len(self._idx2char)
+
     def char2idx(self, char: str) -> int:
         if char in self._char2idx:
             return self._char2idx[char]
@@ -177,3 +180,22 @@ class Dataset(data.Dataset):
             ymax = max((p[1] for p in points))
             boxes.append((xmin, ymin, xmax, ymax))
         return torch.Tensor(boxes)
+
+
+def collate_fn(samples: list) -> Tuple[torch.FloatTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
+    images, boxes, text_targets, text_lengths = zip(*samples)
+    batch_size = len(samples)
+    max_boxes = max((bs.size(0) for bs in boxes))
+    padded_boxes = torch.zeros(batch_size, max_boxes, 4)
+    for i, bs in enumerate(boxes):
+        w = bs.size(0)
+        padded_boxes[i, :w] = bs
+    max_length = max((txt.size(1) for txt in text_targets))
+    padded_text_targets = torch.zeros(batch_size, max_boxes, max_length, dtype=torch.int32)
+    for i, txt in enumerate(text_targets):
+        n_boxes, length = txt.size()
+        padded_text_targets[i, :n_boxes, :length] = txt
+    padded_text_lengths = torch.zeros(batch_size, max_boxes, dtype=torch.int32)
+    for i, l in enumerate(text_lengths):
+        padded_text_lengths[i, :l.size(0)] = l
+    return torch.stack(list(images)), padded_boxes, padded_text_targets, padded_text_lengths
