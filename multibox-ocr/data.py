@@ -70,6 +70,7 @@ class Dataset(data.Dataset):
                     label["ignored"].append(text == "###")
             labels.append(label)
             index += 1
+            if index == 10: break
         return labels
 
     def __len__(self):
@@ -87,9 +88,9 @@ class Dataset(data.Dataset):
         else:
             image, label = self._test_transform(image, label)
         image = np.transpose(image, (2, 0, 1)).astype(np.float) / 255.
-        grids, widths = self._generate_grids(label)
+        boxes = self._generate_boxes(label)
         text_target, text_lengths = self._text_target(label)
-        return torch.FloatTensor(image), grids, widths, text_target, text_lengths
+        return torch.FloatTensor(image), boxes, text_target, text_lengths
 
     def _train_transform(self, image, label):
         image, label = self._random_rotate_with_labels(image, label)
@@ -169,78 +170,12 @@ class Dataset(data.Dataset):
             text_target[box_id, :length] = torch.tensor([self.charset.char2idx(c) for c in text])
         return text_target, text_lengths
 
-    def _generate_grids(self, label: dict) -> Tuple[torch.Tensor, torch.Tensor]:
-        n_boxes = len(label["text"])
-        w_per_h = []
+    def _generate_boxes(self, label: dict) -> torch.Tensor:
         boxes = []
         for points in label["points"]:
             xmin = min((p[0] for p in points))
             ymin = min((p[1] for p in points))
             xmax = max((p[0] for p in points))
             ymax = max((p[1] for p in points))
-            box_height = ymax - ymin
-            box_width = xmax - xmin
             boxes.append((xmin, ymin, xmax, ymax))
-            if box_width > box_height:
-                w_per_h.append(box_width / float(box_height))
-            else:
-                w_per_h.append(box_height / float(box_width))
-        max_width = int(math.ceil(max(w_per_h) * self.pool_height))
-        grids_size = (n_boxes, 2, self.pool_height, max_width, 2)
-        grids = torch.full(grids_size, -2.0)
-        widths = torch.empty(n_boxes, dtype=torch.int32)
-        image_height, image_width = self.image_size
-        for box_id, box in enumerate(boxes[:1]):
-            xmin, ymin, xmax, ymax = box
-            grid, width = self._make_grid(xmin, ymin, xmax, ymax)
-            grids[box_id, 0, :, :width, :] = grid
-            grids[box_id, 1, :, :width, :] = grid.flip((0, 1))
-            widths[box_id] = width
-        return grids, widths
-
-    def _make_grid(self, xmin, ymin, xmax, ymax):
-        if xmax - xmin > ymax - ymin:
-            return self._make_grid_wide(xmin, ymin, xmax, ymax)
-        else:
-            return self._make_grid_tall(xmin, ymin, xmax, ymax)
-
-    def _make_grid_wide(self, xmin, ymin, xmax, ymax):
-        image_height, image_width = self.image_size
-        width = int(math.ceil((xmax - xmin) / (ymax - ymin) * self.pool_height))
-        each_w = (xmax - xmin) / (width - 1)
-        each_h = (ymax - ymin) / (self.pool_height - 1)
-        xx = torch.arange(0, width, dtype=torch.float32) * each_w + xmin
-        xx = xx.view(1, -1).repeat(self.pool_height, 1)
-        xx = (xx - image_width / 2) / (image_width / 2)
-        yy = torch.arange(0, self.pool_height, dtype=torch.float32) * each_h + ymin
-        yy = yy.view(-1, 1).repeat(1, width)
-        yy = (yy - image_height / 2) / (image_height / 2)
-        return torch.stack([xx, yy], -1), width
-
-    def _make_grid_tall(self, xmin, ymin, xmax, ymax):
-        image_height, image_width = self.image_size
-        height = int(math.ceil((ymax - ymin) / (xmax - xmin) * self.pool_height))
-        each_w = (ymax - ymin) / (height - 1)
-        each_h = (xmax - xmin) / (self.pool_height - 1)
-        xx = torch.arange(height, 0, step=-1, dtype=torch.float32) * each_w + ymin
-        xx = xx.view(1, -1).repeat(self.pool_height, 1)
-        xx = (xx - image_height / 2) / (image_height / 2)
-        yy = torch.arange(0, self.pool_height, dtype=torch.float32) * each_h + xmin
-        yy = yy.view(-1, 1).repeat(1, height)
-        yy = (yy - image_width / 2) / (image_width / 2)
-        return torch.stack([yy, xx], -1), height
-
-
-def test():
-    charset = CharSet(list("0123456789"))
-    dataset = Dataset("./dataset/cards-all/images", "./dataset/cards-all/labels", charset=charset, image_size=(384, 640), pool_height=32)
-    image, grids, widths, text_target, text_lengths = dataset[4]
-    import torch.nn.functional as F
-    sample = F.grid_sample(torch.stack([image], 0), grids[:1, 1])
-    import torchvision.utils as utils
-    utils.save_image(image.unsqueeze(0), "out-orig.png", normalize=True)
-    utils.save_image(sample, "out.png", normalize=True)
-
-
-if __name__ == '__main__':
-    test()
+        return torch.Tensor(boxes)
