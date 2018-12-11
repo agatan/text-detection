@@ -1,3 +1,4 @@
+from typing import Optional
 import math
 
 import torch
@@ -297,10 +298,10 @@ class RecognitionModule(nn.Module):
 
 
 class Net(nn.Module):
-    def __init__(self, n_vocab: int) -> None:
+    def __init__(self, n_vocab: int, excitation_cls: Optional[type] = None) -> None:
         super().__init__()
         self.feature_map_scale = 4
-        self.backbone = Backbone(scale=self.feature_map_scale, out_channels=24)
+        self.backbone = Backbone(scale=self.feature_map_scale, out_channels=24, excitation_cls=excitation_cls)
         self.pool_height = 8
         self.box_pool = BidirectionalBoxPool(self.pool_height)
         self.recognition = RecognitionModule(n_vocab, 24)
