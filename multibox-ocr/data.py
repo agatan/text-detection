@@ -37,7 +37,6 @@ class Dataset(data.Dataset):
     def __init__(self, image_dir: Union[str, Path], label_dir: Union[str, Path],
                  charset: CharSet,
                  image_size: Tuple[int, int] = (512, 512),
-                 scale: int = 4,
                  training: bool = False):
         self.image_dir = Path(image_dir)
         self.label_dir = Path(label_dir)
@@ -45,7 +44,6 @@ class Dataset(data.Dataset):
         self.labels = self._read_labels()
         # H, W
         self.image_size = image_size
-        self.scale = scale
         self.training = training
 
     def _read_labels(self):
