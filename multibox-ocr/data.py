@@ -156,8 +156,6 @@ class Dataset(data.Dataset):
         grids_size = (n_boxes, 2, self.pool_height, max_width, 2)
         grids = torch.full(grids_size, -2.0)
         image_height, image_width = self.image_size
-        feature_map_height = image_height // self.scale
-        feature_map_width = image_width // self.scale
         for box_id, box in enumerate(boxes[:1]):
             xmin, ymin, xmax, ymax = box
             grid, width = self._make_grid(xmin, ymin, xmax, ymax)
@@ -204,6 +202,9 @@ def test():
     import torch.nn.functional as F
     sample = F.grid_sample(torch.stack([image], 0), grids[:1, 1])
     import torchvision.utils as utils
-    utils.save_image(image[:, 16:338, 83:107].unsqueeze(0), "out-orig-box.png", normalize=True)
     utils.save_image(image.unsqueeze(0), "out-orig.png", normalize=True)
     utils.save_image(sample, "out.png", normalize=True)
+
+
+if __name__ == '__main__':
+    test()
