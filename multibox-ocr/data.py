@@ -1,4 +1,4 @@
-from typing import Union, Tuple
+from typing import Union, Tuple, List, Dict, Optional
 from pathlib import Path
 import copy
 import math
@@ -11,14 +11,35 @@ import numpy as np
 import util
 
 
+class CharSet:
+    def __init__(self, chars: List[str]) -> None:
+        self.chars = chars
+        self._idx2char = ["<PAD>", "<UNK>"] + chars
+        self._char2idx: Dict[str, int] = {}
+        for i, c in enumerate(self._idx2char):
+            self._char2idx[c] = i
+
+    def char2idx(self, char: str) -> int:
+        if char in self._char2idx:
+            return self._char2idx[char]
+        return self._char2idx["<UNK>"]
+
+    def idx2char(self, idx: int) -> Optional[str]:
+        if 2 <= idx and idx < len(self._idx2char):
+            return self._idx2char[idx]
+        return None
+
+
 class Dataset(data.Dataset):
     def __init__(self, image_dir: Union[str, Path], label_dir: Union[str, Path],
+                 charset: CharSet,
                  image_size: Tuple[int, int] = (512, 512),
                  scale: int = 4,
                  pool_height: int = 8,
                  training: bool = False):
         self.image_dir = Path(image_dir)
         self.label_dir = Path(label_dir)
+        self.charset = charset
         self.labels = self._read_labels()
         # H, W
         self.image_size = image_size
@@ -58,7 +79,7 @@ class Dataset(data.Dataset):
         filename = str(self.image_dir / "img_{}.jpg".format(index + 1))
         return cv2.imread(filename, cv2.IMREAD_COLOR)
 
-    def __getitem__(self, index: int):
+    def __getitem__(self, index: int) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
         image = self._read_image(index)
         label = self.labels[index]
         if self.training:
@@ -67,7 +88,8 @@ class Dataset(data.Dataset):
             image, label = self._test_transform(image, label)
         image = np.transpose(image, (2, 0, 1)).astype(np.float) / 255.
         grids, widths = self._generate_grids(label)
-        return torch.FloatTensor(image), grids, widths
+        text_target, text_lengths = self._text_target(label)
+        return torch.FloatTensor(image), grids, widths, text_target, text_lengths
 
     def _train_transform(self, image, label):
         image, label = self._random_rotate_with_labels(image, label)
@@ -136,6 +158,17 @@ class Dataset(data.Dataset):
                     break
         return new_labels
 
+    def _text_target(self, label: dict) -> Tuple[torch.Tensor, torch.Tensor]:
+        n_boxes = len(label["text"])
+        max_length = max((len(t) for t in label["text"]))
+        text_target = torch.zeros(n_boxes, max_length, dtype=torch.int32)
+        text_lengths = torch.zeros(n_boxes, dtype=torch.int32)
+        for box_id, text in enumerate(label["text"]):
+            length = len(text)
+            text_lengths[box_id] = length
+            text_target[box_id, :length] = torch.tensor([self.charset.char2idx(c) for c in text])
+        return text_target, text_lengths
+
     def _generate_grids(self, label: dict) -> Tuple[torch.Tensor, torch.Tensor]:
         n_boxes = len(label["text"])
         w_per_h = []
@@ -199,8 +232,9 @@ class Dataset(data.Dataset):
 
 
 def test():
-    dataset = Dataset("./dataset/cards-all/images", "./dataset/cards-all/labels", image_size=(384, 640), pool_height=32)
-    image, grids, widths = dataset[4]
+    charset = CharSet(list("0123456789"))
+    dataset = Dataset("./dataset/cards-all/images", "./dataset/cards-all/labels", charset=charset, image_size=(384, 640), pool_height=32)
+    image, grids, widths, text_target, text_lengths = dataset[4]
     import torch.nn.functional as F
     sample = F.grid_sample(torch.stack([image], 0), grids[:1, 1])
     import torchvision.utils as utils
