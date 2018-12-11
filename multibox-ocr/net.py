@@ -321,12 +321,40 @@ class Net(nn.Module):
         return recognition, widths
 
 
+def compute_loss(recognition: torch.Tensor, width: torch.Tensor,
+                   text_target: torch.Tensor, text_lengths: torch.Tensor) -> None:
+    text_target = text_target.unsqueeze(2).repeat(1, 1, 2, 1)
+    text_lengths = text_lengths.unsqueeze(2).repeat(1, 1, 2)
+    batch_size, max_box, _bidi, vocab, max_width = recognition.size()
+    assert _bidi == 2
+    recognition = recognition.view(batch_size * max_box * 2, vocab, max_width)
+    width = width.view(batch_size * max_box * 2)
+    text_target = text_target.view(batch_size * max_box * 2, -1)
+    text_lengths = text_lengths.view(batch_size * max_box * 2)
+
+    # (boxes, channels, length)
+    log_probs = F.log_softmax(recognition, dim=1)
+    # (length, boxes, channels)
+    log_probs = log_probs.transpose(1, 2).transpose(0, 1)
+
+    bidirectional_loss = F.ctc_loss(log_probs, text_target, width, text_lengths, reduction='none')
+    bidirectional_loss = bidirectional_loss.view(batch_size * max_box, 2)
+    loss, _ = torch.min(bidirectional_loss, dim=1)
+
+    # filter 0 length boxes
+    indices = width.view(batch_size * max_box, 2)[:, 0] != 0
+    return loss[indices].mean()
+
+
+
 def test():
     import data
     charset = data.CharSet(list("0123456789"))
     dataset = data.Dataset("./dataset/cards-all/images", "./dataset/cards-all/labels", charset=charset, image_size=(384, 640))
-    image, boxes, text_target, text_lengths = dataset[4]
+    image, boxes, text_target, text_lengths = dataset[5]
     recognition, widths = Net(12)(image.unsqueeze(0), boxes.unsqueeze(0))
+    loss = compute_loss(recognition, widths, text_target.unsqueeze(0), text_lengths.unsqueeze(0))
+    print(loss)
     print(recognition.size(), widths.size())
     features, widths = BidirectionalBoxPool(pool_height=64)(image.unsqueeze(0), boxes.unsqueeze(0))
     import torchvision.utils as utils
