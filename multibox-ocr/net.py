@@ -322,7 +322,7 @@ class Net(nn.Module):
 
 
 def compute_loss(recognition: torch.Tensor, width: torch.Tensor,
-                   text_target: torch.Tensor, text_lengths: torch.Tensor) -> None:
+                 text_target: torch.Tensor, text_lengths: torch.Tensor) -> torch.Tensor:
     text_target = text_target.unsqueeze(2).repeat(1, 1, 2, 1)
     text_lengths = text_lengths.unsqueeze(2).repeat(1, 1, 2)
     batch_size, max_box, _bidi, vocab, max_width = recognition.size()
