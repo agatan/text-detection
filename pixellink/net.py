@@ -235,7 +235,7 @@ class PixelLinkLoss:
         for i in range(batch_size):
             wrong = softmax_input[i, 0][neg_pixel_masks[i] == 1].view(-1)
             self.neg_area_per_image[i] = min(int_area_per_image[i] * r, wrong.size(0))
-            if wrong.size(0) == 0:
+            if self.neg_area_per_image[i].item() == 0:
                 continue
             topk, _ = torch.topk(-wrong, self.neg_area_per_image[i].item())
             if topk.size(0) != 0:
@@ -255,6 +255,10 @@ class PixelLinkLoss:
         negative_count = torch.sum((argmax == 0) * (neg_pixel_mask == 1)).item()
         elt_count = torch.sum(target == 1).item() + torch.sum(neg_pixel_mask == 1).item()
         self.pixel_accuracy = (positive_count + negative_count) / float(elt_count)
+        if torch.sum(target == 1).item() != 0:
+            self.positive_pixel_accuracy = positive_count / float(torch.sum(target == 1).item())
+        else:
+            self.positive_pixel_accuracy = 0.0
 
     def _set_link_loss(self, link_input, link_target):
         batch_size = link_input.size(0)
