@@ -69,6 +69,7 @@ class Dataset(data.Dataset):
                     label["ignored"].append(text == "###")
             labels.append(label)
             index += 1
+            if index == 10: break
         return labels
 
     def __len__(self):
@@ -79,6 +80,7 @@ class Dataset(data.Dataset):
         return cv2.imread(filename, cv2.IMREAD_COLOR)
 
     def __getitem__(self, index: int) -> Tuple[torch.FloatTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
+        print(index)
         image = self._read_image(index)
         label = self.labels[index]
         if self.training:
@@ -89,8 +91,8 @@ class Dataset(data.Dataset):
         boxes = self._generate_boxes(label)
         text_target, text_lengths = self._text_target(label)
         box_size = boxes.size(0)
-        if box_size > 4:
-            indices = np.random.choice(np.arange(0, box_size), 4)
+        if box_size > 2:
+            indices = np.random.choice(np.arange(0, box_size), 2)
             boxes = boxes[indices]
             text_target = text_target[indices]
             text_lengths = text_lengths[indices]
@@ -177,6 +179,7 @@ class Dataset(data.Dataset):
     def _generate_boxes(self, label: dict) -> torch.Tensor:
         boxes = []
         for points in label["points"]:
+            print(points)
             xmin = min((p[0] for p in points))
             ymin = min((p[1] for p in points))
             xmax = max((p[0] for p in points))

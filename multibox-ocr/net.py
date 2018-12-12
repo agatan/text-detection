@@ -203,6 +203,8 @@ class BidirectionalBoxPool(nn.Module):
                 xmin, ymin, xmax, ymax = box
                 if xmin == 0 and ymin == 0 and xmax == 0 and ymax == 0:
                     continue
+                from icecream import ic
+                ic(box)
                 grid, width = self._make_grid(xmin, ymin, xmax, ymax, base_height, base_width)
                 widths[batch_id, box_id, :] = width
                 grids[batch_id, 0, :, :width, :] = grid
@@ -237,6 +239,7 @@ class BidirectionalBoxPool(nn.Module):
             return self._make_grid_tall(xmin, ymin, xmax, ymax, base_height, base_width)
 
     def _make_grid_wide(self, xmin, ymin, xmax, ymax, base_height, base_width):
+        print("wide")
         width = int(math.ceil((xmax - xmin) / (ymax - ymin) * self.pool_height))
         device = xmin.device
         each_w = (xmax - xmin) / (width - 1)
@@ -250,6 +253,7 @@ class BidirectionalBoxPool(nn.Module):
         return torch.stack([xx, yy], -1), width
 
     def _make_grid_tall(self, xmin, ymin, xmax, ymax, base_height, base_width):
+        print("tall")
         height = int(math.ceil((ymax - ymin) / (xmax - xmin) * self.pool_height))
         device = xmin.device
         each_w = (ymax - ymin) / (height - 1)
@@ -318,7 +322,17 @@ class Net(nn.Module):
             images: (N, C, H, W)
             boxes: (N, #boxes,
         """
+        from icecream import ic
         feature_map = self.backbone(images)
+        ic(boxes, images.shape, feature_map.size())
+        pooled, widths = self.box_pool(images, boxes)
+        ic(pooled.size())
+        pooled = pooled.view(-1, 3, 8, pooled.size(5))
+        import torchvision.utils
+        ic(widths)
+        torchvision.utils.save_image(pooled, "out.png", normalize=True)
+        torchvision.utils.save_image(images, "orig.png", normalize=True)
+        raise RuntimeError
         box_feature_map, widths = self.box_pool(feature_map, boxes / self.feature_map_scale)
         batch_size, max_box, _, channels, height, width = box_feature_map.size()
         flatten_feature = box_feature_map.view(-1, channels, height, width)

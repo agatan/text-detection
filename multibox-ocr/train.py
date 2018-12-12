@@ -16,7 +16,7 @@ from data import Dataset, CharSet, collate_fn
 import net
 
 
-LOG_FREQ = 200
+LOG_FREQ = 2
 
 
 def create_summary_writer(model, dummy, logdir):
