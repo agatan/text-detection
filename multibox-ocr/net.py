@@ -132,7 +132,7 @@ class Backbone(nn.Module):
         self.block2 = self._layers_with_excitation_as_need(features[2:3], 24)
         self.block3 = self._layers_with_excitation_as_need(features[3:4], 32)
         self.block4 = self._layers_with_excitation_as_need(features[4:6], 96)
-        self.block5 = self._layers_with_excitation_as_need(features[6:], 1280)
+        self.block5 = self._layers_with_excitation_as_need(features[6:], 256)
         self.out_conv1 = self._out_conv_with_excitation_as_need(256 + 96, 128)
         self.out_conv2 = self._out_conv_with_excitation_as_need(128 + 32, 64)
         self.out_conv3 = self._out_conv_with_excitation_as_need(64 + 24, 32)
@@ -194,10 +194,11 @@ class BidirectionalBoxPool(nn.Module):
         base_height = x.size(2)
         base_width = x.size(3)
         max_width = self._max_width(boxes)
-        features = torch.zeros(batch_size, max_box, 2, channels, self.pool_height, max_width)
-        widths = torch.zeros(batch_size, max_box, 2)
+        device = x.device
+        features = torch.zeros(batch_size, max_box, 2, channels, self.pool_height, max_width).to(device)
+        widths = torch.zeros(batch_size, max_box, 2).to(device)
         for box_id in range(0, max_box):
-            grids = torch.full((batch_size, 2, self.pool_height, max_width, 2), -2.0)
+            grids = torch.full((batch_size, 2, self.pool_height, max_width, 2), -2.0).to(device)
             for batch_id, box in enumerate(boxes[:, box_id]):
                 xmin, ymin, xmax, ymax = box
                 if xmin == 0 and ymin == 0 and xmax == 0 and ymax == 0:
@@ -217,6 +218,8 @@ class BidirectionalBoxPool(nn.Module):
         for batch in boxes:
             for box in batch:
                 xmin, ymin, xmax, ymax = box
+                if xmin == 0 and ymin == 0 and xmax == 0 and ymax == 0:
+                    continue
                 box_height = ymax - ymin
                 box_width = xmax - xmin
                 if box_width > box_height:
@@ -235,24 +238,26 @@ class BidirectionalBoxPool(nn.Module):
 
     def _make_grid_wide(self, xmin, ymin, xmax, ymax, base_height, base_width):
         width = int(math.ceil((xmax - xmin) / (ymax - ymin) * self.pool_height))
+        device = xmin.device
         each_w = (xmax - xmin) / (width - 1)
         each_h = (ymax - ymin) / (self.pool_height - 1)
-        xx = torch.arange(0, width, dtype=torch.float32) * each_w + xmin
+        xx = torch.arange(0, width, dtype=torch.float32).to(device) * each_w + xmin
         xx = xx.view(1, -1).repeat(self.pool_height, 1)
         xx = (xx - base_width / 2) / (base_width / 2)
-        yy = torch.arange(0, self.pool_height, dtype=torch.float32) * each_h + ymin
+        yy = torch.arange(0, self.pool_height, dtype=torch.float32).to(device) * each_h + ymin
         yy = yy.view(-1, 1).repeat(1, width)
         yy = (yy - base_height / 2) / (base_height / 2)
         return torch.stack([xx, yy], -1), width
 
     def _make_grid_tall(self, xmin, ymin, xmax, ymax, base_height, base_width):
         height = int(math.ceil((ymax - ymin) / (xmax - xmin) * self.pool_height))
+        device = xmin.device
         each_w = (ymax - ymin) / (height - 1)
         each_h = (xmax - xmin) / (self.pool_height - 1)
-        xx = torch.arange(height, 0, step=-1, dtype=torch.float32) * each_w + ymin
+        xx = torch.arange(height, 0, step=-1, dtype=torch.float32).to(device) * each_w + ymin
         xx = xx.view(1, -1).repeat(self.pool_height, 1)
         xx = (xx - base_height / 2) / (base_height / 2)
-        yy = torch.arange(0, self.pool_height, dtype=torch.float32) * each_h + xmin
+        yy = torch.arange(0, self.pool_height, dtype=torch.float32).to(device) * each_h + xmin
         yy = yy.view(-1, 1).repeat(1, height)
         yy = (yy - base_width / 2) / (base_width / 2)
         return torch.stack([yy, xx], -1), height

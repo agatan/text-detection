@@ -41,7 +41,7 @@ def main():
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    with open(os.path.join(os.path.dirname(__file__), "charlist.txt"), "r") as fp:
+    with open(os.path.join(os.path.dirname(__file__), "charlist.txt"), "r", encoding="utf-8") as fp:
         charset = CharSet(list(fp.read().strip()))
 
     image_size = (384, 640)
