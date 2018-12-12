@@ -316,7 +316,7 @@ class Net(nn.Module):
         """
         Args:
             images: (N, C, H, W)
-            boxes: (N, #boxes,
+            boxes: (N, #boxes, 4 (xmin, ymin, xmax, ymax))
         """
         feature_map = self.backbone(images)
         box_feature_map, widths = self.box_pool(feature_map, boxes / self.feature_map_scale)

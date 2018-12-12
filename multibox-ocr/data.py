@@ -79,7 +79,7 @@ class Dataset(data.Dataset):
         filename = str(self.image_dir / "img_{}.jpg".format(index + 1))
         return cv2.imread(filename, cv2.IMREAD_COLOR)
 
-    def __getitem__(self, index: int) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
+    def __getitem__(self, index: int) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.LongTensor, torch.LongTensor]:
         image = self._read_image(index)
         label = self.labels[index]
         if self.training:
@@ -91,7 +91,7 @@ class Dataset(data.Dataset):
         selected_box = np.random.randint(0, n_boxes)
         box = self._generate_boxes(label["points"][selected_box])
         text_target, text_lengths = self._text_target(label["text"][selected_box])
-        return torch.FloatTensor(image), box, text_target, torch.LongTensor(text_lengths)
+        return torch.FloatTensor(image), box, text_target, text_lengths
 
     def _train_transform(self, image, label):
         image, label = self._random_rotate_with_labels(image, label)
@@ -177,9 +177,9 @@ def collate_fn(samples: list) -> Tuple[torch.FloatTensor, torch.LongTensor, torc
     images, boxes, text_targets, text_lengths = zip(*samples)
     batch_size = len(samples)
     max_length = max((txt.size(0) for txt in text_targets))
-    padded_text_targets = torch.zeros(batch_size, max_length, dtype=torch.int32)
+    padded_text_targets = torch.zeros(batch_size, 1, max_length, dtype=torch.int32)
     for i, txt in enumerate(text_targets):
         length = txt.size(0)
-        padded_text_targets[i, :length] = txt
-    return torch.stack(list(images)), torch.stack(list(boxes)), padded_text_targets, torch.stack(list(text_lengths))
+        padded_text_targets[i, 0, :length] = txt
+    return torch.stack(list(images)), torch.stack(list(boxes)).unsqueeze(1), padded_text_targets, torch.tensor(list(text_lengths)).unsqueeze(1)
 
