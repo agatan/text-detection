@@ -337,19 +337,24 @@ def compute_loss(recognition: torch.Tensor, width: torch.Tensor,
     width = width.view(batch_size * max_box * 2)
     text_target = text_target.view(batch_size * max_box * 2, -1)
     text_lengths = text_lengths.view(batch_size * max_box * 2)
-
     # (boxes, channels, length)
     log_probs = F.log_softmax(recognition, dim=1)
     # (length, boxes, channels)
     log_probs = log_probs.transpose(1, 2).transpose(0, 1)
 
+    # filter 0 length boxes
+    indices = (width != 0) & (text_lengths != 0)
+
+    log_probs = log_probs[:, indices]
+    text_target = text_target[indices]
+    text_lengths = text_lengths[indices]
+    width = width[indices]
+
     bidirectional_loss = F.ctc_loss(log_probs, text_target, width, text_lengths, reduction='none')
     bidirectional_loss = bidirectional_loss.view(batch_size * max_box, 2)
     loss, _ = torch.min(bidirectional_loss, dim=1)
 
-    # filter 0 length boxes
-    indices = width.view(batch_size * max_box, 2)[:, 0] != 0
-    return loss[indices].mean()
+    return loss.mean()
 
 
 
