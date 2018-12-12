@@ -69,6 +69,7 @@ class Dataset(data.Dataset):
                     label["ignored"].append(text == "###")
             labels.append(label)
             index += 1
+            break
         return labels
 
     def __len__(self):
@@ -86,9 +87,11 @@ class Dataset(data.Dataset):
         else:
             image, label = self._test_transform(image, label)
         image = np.transpose(image, (2, 0, 1)).astype(np.float) / 255.
-        boxes = self._generate_boxes(label)
-        text_target, text_lengths = self._text_target(label)
-        return torch.FloatTensor(image), boxes, text_target, text_lengths
+        n_boxes = len(label["points"])
+        selected_box = np.random.randint(0, n_boxes)
+        box = self._generate_boxes(label["points"][selected_box])
+        text_target, text_lengths = self._text_target(label["text"][selected_box])
+        return torch.FloatTensor(image), box, text_target, torch.LongTensor(text_lengths)
 
     def _train_transform(self, image, label):
         image, label = self._random_rotate_with_labels(image, label)
@@ -157,42 +160,26 @@ class Dataset(data.Dataset):
                     break
         return new_labels
 
-    def _text_target(self, label: dict) -> Tuple[torch.Tensor, torch.Tensor]:
-        n_boxes = len(label["text"])
-        max_length = max((len(t) for t in label["text"]))
-        text_target = torch.zeros(n_boxes, max_length, dtype=torch.int32)
-        text_lengths = torch.zeros(n_boxes, dtype=torch.int32)
-        for box_id, text in enumerate(label["text"]):
-            length = len(text)
-            text_lengths[box_id] = length
-            text_target[box_id, :length] = torch.tensor([self.charset.char2idx(c) for c in text])
-        return text_target, text_lengths
+    def _text_target(self, text: str) -> Tuple[torch.Tensor, int]:
+        length = len(text)
+        text_target = torch.tensor([self.charset.char2idx(c) for c in text])
+        return text_target, length
 
-    def _generate_boxes(self, label: dict) -> torch.Tensor:
-        boxes = []
-        for points in label["points"]:
-            xmin = min((p[0] for p in points))
-            ymin = min((p[1] for p in points))
-            xmax = max((p[0] for p in points))
-            ymax = max((p[1] for p in points))
-            boxes.append((xmin, ymin, xmax, ymax))
-        return torch.Tensor(boxes)
+    def _generate_boxes(self, points: list) -> torch.Tensor:
+        xmin = min((p[0] for p in points))
+        ymin = min((p[1] for p in points))
+        xmax = max((p[0] for p in points))
+        ymax = max((p[1] for p in points))
+        return torch.Tensor([xmin, ymin, xmax, ymax])
 
 
 def collate_fn(samples: list) -> Tuple[torch.FloatTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
     images, boxes, text_targets, text_lengths = zip(*samples)
     batch_size = len(samples)
-    max_boxes = max((bs.size(0) for bs in boxes))
-    padded_boxes = torch.zeros(batch_size, max_boxes, 4)
-    for i, bs in enumerate(boxes):
-        w = bs.size(0)
-        padded_boxes[i, :w] = bs
-    max_length = max((txt.size(1) for txt in text_targets))
-    padded_text_targets = torch.zeros(batch_size, max_boxes, max_length, dtype=torch.int32)
+    max_length = max((txt.size(0) for txt in text_targets))
+    padded_text_targets = torch.zeros(batch_size, max_length, dtype=torch.int32)
     for i, txt in enumerate(text_targets):
-        n_boxes, length = txt.size()
-        padded_text_targets[i, :n_boxes, :length] = txt
-    padded_text_lengths = torch.zeros(batch_size, max_boxes, dtype=torch.int32)
-    for i, l in enumerate(text_lengths):
-        padded_text_lengths[i, :l.size(0)] = l
-    return torch.stack(list(images)), padded_boxes, padded_text_targets, padded_text_lengths
+        length = txt.size(0)
+        padded_text_targets[i, :length] = txt
+    return torch.stack(list(images)), torch.stack(list(boxes)), padded_text_targets, torch.stack(list(text_lengths))
+
