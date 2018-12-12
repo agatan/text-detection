@@ -203,8 +203,6 @@ class BidirectionalBoxPool(nn.Module):
                 xmin, ymin, xmax, ymax = box
                 if xmin == 0 and ymin == 0 and xmax == 0 and ymax == 0:
                     continue
-                from icecream import ic
-                ic(box)
                 grid, width = self._make_grid(xmin, ymin, xmax, ymax, base_height, base_width)
                 widths[batch_id, box_id, :] = width
                 grids[batch_id, 0, :, :width, :] = grid
@@ -322,17 +320,7 @@ class Net(nn.Module):
             images: (N, C, H, W)
             boxes: (N, #boxes,
         """
-        from icecream import ic
         feature_map = self.backbone(images)
-        ic(boxes, images.shape, feature_map.size())
-        pooled, widths = self.box_pool(images, boxes)
-        ic(pooled.size())
-        pooled = pooled.view(-1, 3, 8, pooled.size(5))
-        import torchvision.utils
-        ic(widths)
-        torchvision.utils.save_image(pooled, "out.png", normalize=True)
-        torchvision.utils.save_image(images, "orig.png", normalize=True)
-        raise RuntimeError
         box_feature_map, widths = self.box_pool(feature_map, boxes / self.feature_map_scale)
         batch_size, max_box, _, channels, height, width = box_feature_map.size()
         flatten_feature = box_feature_map.view(-1, channels, height, width)
@@ -343,14 +331,19 @@ class Net(nn.Module):
 
 def compute_loss(recognition: torch.Tensor, width: torch.Tensor,
                  text_target: torch.Tensor, text_lengths: torch.Tensor) -> torch.Tensor:
+    from icecream import ic
+    ic(text_target.size(), text_lengths.size(), recognition.size(), width.size())
     text_target = text_target.unsqueeze(2).repeat(1, 1, 2, 1)
     text_lengths = text_lengths.unsqueeze(2).repeat(1, 1, 2)
+    ic(text_target.size(), text_lengths.size(), recognition.size(), width.size())
     batch_size, max_box, _bidi, vocab, max_width = recognition.size()
+    ic(batch_size, max_box, _bidi, vocab, max_width)
     assert _bidi == 2
     recognition = recognition.view(batch_size * max_box * 2, vocab, max_width)
     width = width.view(batch_size * max_box * 2)
     text_target = text_target.view(batch_size * max_box * 2, -1)
     text_lengths = text_lengths.view(batch_size * max_box * 2)
+    ic(text_target.size(), text_lengths.size(), recognition.size(), width.size())
     # (boxes, channels, length)
     log_probs = F.log_softmax(recognition, dim=1)
     # (length, boxes, channels)
@@ -358,6 +351,7 @@ def compute_loss(recognition: torch.Tensor, width: torch.Tensor,
 
     # filter 0 length boxes
     indices = (width != 0) & (text_lengths != 0) & (width >= text_lengths.float())
+    ic(text_lengths[width < text_lengths.float()])
 
     log_probs = log_probs[:, indices]
     text_target = text_target[indices]
@@ -367,6 +361,7 @@ def compute_loss(recognition: torch.Tensor, width: torch.Tensor,
     bidirectional_loss = F.ctc_loss(log_probs, text_target, width, text_lengths, reduction='none')
     bidirectional_loss = bidirectional_loss.view(-1, 2)
     loss, _ = torch.min(bidirectional_loss, dim=1)
+    assert False
 
     return loss.mean()
 
