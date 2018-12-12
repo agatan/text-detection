@@ -69,6 +69,7 @@ class Dataset(data.Dataset):
                     label["ignored"].append(text == "###")
             labels.append(label)
             index += 1
+            if index == 10: break
         return labels
 
     def __len__(self):
@@ -78,7 +79,7 @@ class Dataset(data.Dataset):
         filename = str(self.image_dir / "img_{}.jpg".format(index + 1))
         return cv2.imread(filename, cv2.IMREAD_COLOR)
 
-    def __getitem__(self, index: int) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
+    def __getitem__(self, index: int) -> Tuple[torch.FloatTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
         image = self._read_image(index)
         label = self.labels[index]
         if self.training:
@@ -88,6 +89,12 @@ class Dataset(data.Dataset):
         image = np.transpose(image, (2, 0, 1)).astype(np.float) / 255.
         boxes = self._generate_boxes(label)
         text_target, text_lengths = self._text_target(label)
+        box_size = boxes.size(0)
+        if box_size > 8:
+            indices = np.random.choice(np.arange(0, box_size), 8)
+            boxes = boxes[indices]
+            text_target = text_target[indices]
+            text_lengths = text_lengths[indices]
         return torch.FloatTensor(image), boxes, text_target, text_lengths
 
     def _train_transform(self, image, label):
