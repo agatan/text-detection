@@ -89,8 +89,8 @@ class Dataset(data.Dataset):
         boxes = self._generate_boxes(label)
         text_target, text_lengths = self._text_target(label)
         box_size = boxes.size(0)
-        if box_size > 8:
-            indices = np.random.choice(np.arange(0, box_size), 8)
+        if box_size > 4:
+            indices = np.random.choice(np.arange(0, box_size), 4)
             boxes = boxes[indices]
             text_target = text_target[indices]
             text_lengths = text_lengths[indices]
