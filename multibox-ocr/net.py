@@ -343,7 +343,7 @@ def compute_loss(recognition: torch.Tensor, width: torch.Tensor,
     log_probs = log_probs.transpose(1, 2).transpose(0, 1)
 
     # filter 0 length boxes
-    indices = (width != 0) & (text_lengths != 0)
+    indices = (width != 0) & (text_lengths != 0) & (width >= text_lengths.float())
 
     log_probs = log_probs[:, indices]
     text_target = text_target[indices]
