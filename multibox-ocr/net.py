@@ -351,7 +351,7 @@ def compute_loss(recognition: torch.Tensor, width: torch.Tensor,
     width = width[indices]
 
     bidirectional_loss = F.ctc_loss(log_probs, text_target, width, text_lengths, reduction='none')
-    bidirectional_loss = bidirectional_loss.view(batch_size * max_box, 2)
+    bidirectional_loss = bidirectional_loss.view(-1, 2)
     loss, _ = torch.min(bidirectional_loss, dim=1)
 
     return loss.mean()
