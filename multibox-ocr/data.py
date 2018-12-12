@@ -69,7 +69,6 @@ class Dataset(data.Dataset):
                     label["ignored"].append(text == "###")
             labels.append(label)
             index += 1
-            if index == 10: break
         return labels
 
     def __len__(self):
