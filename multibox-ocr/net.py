@@ -1,3 +1,4 @@
+from icecream import ic
 from typing import Optional
 import math
 
@@ -203,10 +204,16 @@ class BidirectionalBoxPool(nn.Module):
                 xmin, ymin, xmax, ymax = box
                 if xmin == 0 and ymin == 0 and xmax == 0 and ymax == 0:
                     continue
+                if xmax - xmin <= 0 or ymax - ymin <= 0:
+                    continue
                 grid, width = self._make_grid(xmin, ymin, xmax, ymax, base_height, base_width)
                 widths[batch_id, box_id, :] = width
                 grids[batch_id, 0, :, :width, :] = grid
                 grids[batch_id, 1, :, :width, :] = grid.flip((0, 1))
+                if torch.isnan(grid).sum() != 0:
+                    ic(grid)
+                    ic(box, base_height, base_width)
+                    assert False
             sampled_features = F.grid_sample(x, grids[:, 0, :, :, :])
             inverted_sampled_features = F.grid_sample(x, grids[:, 1, :, :, :])
             features[:, box_id, 0, :, :, :] = sampled_features
@@ -222,6 +229,8 @@ class BidirectionalBoxPool(nn.Module):
                     continue
                 box_height = ymax - ymin
                 box_width = xmax - xmin
+                if box_height <= 0 or box_width <= 0:
+                    continue
                 if box_width > box_height:
                     w_per_h = box_width / float(box_height)
                 else:
@@ -237,8 +246,8 @@ class BidirectionalBoxPool(nn.Module):
             return self._make_grid_tall(xmin, ymin, xmax, ymax, base_height, base_width)
 
     def _make_grid_wide(self, xmin, ymin, xmax, ymax, base_height, base_width):
-        print("wide")
         width = int(math.ceil((xmax - xmin) / (ymax - ymin) * self.pool_height))
+        assert width >= self.pool_height
         device = xmin.device
         each_w = (xmax - xmin) / (width - 1)
         each_h = (ymax - ymin) / (self.pool_height - 1)
@@ -251,8 +260,8 @@ class BidirectionalBoxPool(nn.Module):
         return torch.stack([xx, yy], -1), width
 
     def _make_grid_tall(self, xmin, ymin, xmax, ymax, base_height, base_width):
-        print("tall")
         height = int(math.ceil((ymax - ymin) / (xmax - xmin) * self.pool_height))
+        assert height >= self.pool_height, "{}, {}, {}, {}".format(xmin, ymin, xmax, ymax)
         device = xmin.device
         each_w = (ymax - ymin) / (height - 1)
         each_h = (xmax - xmin) / (self.pool_height - 1)
@@ -322,6 +331,11 @@ class Net(nn.Module):
         """
         feature_map = self.backbone(images)
         box_feature_map, widths = self.box_pool(feature_map, boxes / self.feature_map_scale)
+        if torch.sum(torch.isnan(box_feature_map)) != 0:
+            ic(widths)
+            ic(boxes)
+            ic(torch.isnan(feature_map).sum())
+            ic(torch.isnan(box_feature_map).sum())
         batch_size, max_box, _, channels, height, width = box_feature_map.size()
         flatten_feature = box_feature_map.view(-1, channels, height, width)
         flatten_recognition = self.recognition(flatten_feature)
@@ -331,19 +345,14 @@ class Net(nn.Module):
 
 def compute_loss(recognition: torch.Tensor, width: torch.Tensor,
                  text_target: torch.Tensor, text_lengths: torch.Tensor) -> torch.Tensor:
-    from icecream import ic
-    ic(text_target.size(), text_lengths.size(), recognition.size(), width.size())
     text_target = text_target.unsqueeze(2).repeat(1, 1, 2, 1)
     text_lengths = text_lengths.unsqueeze(2).repeat(1, 1, 2)
-    ic(text_target.size(), text_lengths.size(), recognition.size(), width.size())
     batch_size, max_box, _bidi, vocab, max_width = recognition.size()
-    ic(batch_size, max_box, _bidi, vocab, max_width)
     assert _bidi == 2
     recognition = recognition.view(batch_size * max_box * 2, vocab, max_width)
     width = width.view(batch_size * max_box * 2)
     text_target = text_target.view(batch_size * max_box * 2, -1)
     text_lengths = text_lengths.view(batch_size * max_box * 2)
-    ic(text_target.size(), text_lengths.size(), recognition.size(), width.size())
     # (boxes, channels, length)
     log_probs = F.log_softmax(recognition, dim=1)
     # (length, boxes, channels)
@@ -351,7 +360,9 @@ def compute_loss(recognition: torch.Tensor, width: torch.Tensor,
 
     # filter 0 length boxes
     indices = (width != 0) & (text_lengths != 0) & (width >= text_lengths.float())
-    ic(text_lengths[width < text_lengths.float()])
+    if torch.sum(width < text_lengths.float()) != 0:
+        ic(width, text_lengths)
+        ic(text_target[width < text_lengths.float()])
 
     log_probs = log_probs[:, indices]
     text_target = text_target[indices]
@@ -359,9 +370,12 @@ def compute_loss(recognition: torch.Tensor, width: torch.Tensor,
     width = width[indices]
 
     bidirectional_loss = F.ctc_loss(log_probs, text_target, width, text_lengths, reduction='none')
+    if torch.sum(torch.isnan(bidirectional_loss)) != 0:
+        ic(recognition)
+        ic(log_probs, text_target, text_lengths, width)
+        assert False
     bidirectional_loss = bidirectional_loss.view(-1, 2)
     loss, _ = torch.min(bidirectional_loss, dim=1)
-    assert False
 
     return loss.mean()
 

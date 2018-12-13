@@ -61,6 +61,8 @@ class Dataset(data.Dataset):
             with open(str(filename), "r", encoding="utf-8_sig") as fp:
                 for line in fp:
                     fields = line.split(",")
+                    if fields[0] == "other":
+                        continue
                     fields = fields[1:]
                     points = [[int(fields[2 * i]), int(fields[2 * i + 1])] for i in range(0, 4)]
                     label["points"].append(points)
@@ -89,8 +91,8 @@ class Dataset(data.Dataset):
         boxes = self._generate_boxes(label)
         text_target, text_lengths = self._text_target(label)
         box_size = boxes.size(0)
-        if box_size > 2:
-            indices = np.random.choice(np.arange(0, box_size), 2)
+        if box_size > 4:
+            indices = np.random.choice(np.arange(0, box_size), 4)
             boxes = boxes[indices]
             text_target = text_target[indices]
             text_lengths = text_lengths[indices]

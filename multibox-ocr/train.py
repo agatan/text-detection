@@ -16,7 +16,7 @@ from data import Dataset, CharSet, collate_fn
 import net
 
 
-LOG_FREQ = 2
+LOG_FREQ = 100
 
 
 def create_summary_writer(model, dummy, logdir):
@@ -62,6 +62,7 @@ def main():
         print(len(dataset), len(test_dataset))
     test_dataloader = data.DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=8, collate_fn=collate_fn)
 
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.restore:
         if torch.cuda.is_available():
@@ -74,7 +75,7 @@ def main():
         excitation_cls = {"cse": net.CSE, "sse": net.SSE, "scse": net.SCSE}.get(args.excitation, None)
         print(excitation_cls)
         model = net.Net(n_vocab=len(charset), excitation_cls=excitation_cls).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
     def step_fn(training):
         def fn(engine, batch):
